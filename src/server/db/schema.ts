@@ -47,6 +47,22 @@ export const eventBookings = sqliteTable("event_bookings", {
   status: text("status").notNull().default("scheduled"),
 });
 
+export const parkingAreas = sqliteTable("parking_areas", {
+  id: text("id").primaryKey(),
+  facilityId: text("facility_id")
+    .notNull()
+    .references(() => facilities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  code: text("code").notNull(),
+  description: text("description").default(""),
+  allocatedCapacity: integer("allocated_capacity").notNull().default(0),
+  businessUnitId: text("business_unit_id").references(() => businessUnits.id),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  version: integer("version").notNull().default(1),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const parkingSessions = sqliteTable("parking_sessions", {
   id: text("id").primaryKey(),
   facilityId: text("facility_id")
@@ -58,6 +74,7 @@ export const parkingSessions = sqliteTable("parking_sessions", {
   spaceCategoryId: text("space_category_id")
     .notNull()
     .references(() => spaceCategories.id),
+  parkingAreaId: text("parking_area_id").references(() => parkingAreas.id),
   licensePlate: text("license_plate").notNull(),
   entryTime: text("entry_time").notNull(),
   exitTime: text("exit_time"),

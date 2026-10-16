@@ -11,6 +11,65 @@ export const FacilitySchema = z.object({
 });
 export type Facility = z.infer<typeof FacilitySchema>;
 
+export const CreateFacilityInputSchema = z.object({
+  name: z.string().min(2, "El nombre de la instalación debe tener al menos 2 caracteres"),
+  address: z.string().optional().default(""),
+  totalCapacity: z.number().int().positive("La capacidad total debe ser mayor a 0"),
+});
+export type CreateFacilityInput = z.infer<typeof CreateFacilityInputSchema>;
+
+export const UpdateFacilityInputSchema = z.object({
+  name: z.string().min(2).optional(),
+  address: z.string().optional(),
+  totalCapacity: z.number().int().positive().optional(),
+});
+export type UpdateFacilityInput = z.infer<typeof UpdateFacilityInputSchema>;
+
+// --- Parking Area ---
+export const ParkingAreaSchema = z.object({
+  id: z.string().min(1),
+  facilityId: z.string().min(1),
+  name: z.string().min(2, "El nombre del área debe tener al menos 2 caracteres"),
+  code: z.string().min(1).max(10).toUpperCase(),
+  description: z.string().optional().default(""),
+  allocatedCapacity: z.number().int().nonnegative("La capacidad asignada no puede ser negativa"),
+  businessUnitId: z.string().nullable().default(null),
+  isActive: z.boolean().default(true),
+  version: z.number().int().default(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type ParkingArea = z.infer<typeof ParkingAreaSchema>;
+
+export const CreateParkingAreaInputSchema = z.object({
+  facilityId: z.string().min(1),
+  name: z.string().min(2, "El nombre del área debe tener al menos 2 caracteres"),
+  code: z.string().min(1).max(10).toUpperCase(),
+  description: z.string().optional().default(""),
+  allocatedCapacity: z.number().int().nonnegative("La capacidad debe ser mayor o igual a 0"),
+  businessUnitId: z.string().nullable().optional().default(null),
+});
+export type CreateParkingAreaInput = z.input<typeof CreateParkingAreaInputSchema>;
+
+export const UpdateParkingAreaCapacityInputSchema = z.object({
+  allocatedCapacity: z.number().int().nonnegative(),
+  version: z.number().int().positive(),
+});
+export type UpdateParkingAreaCapacityInput = z.infer<typeof UpdateParkingAreaCapacityInputSchema>;
+
+export const ParkingAreaMetricsSchema = z.object({
+  areaId: z.string().min(1),
+  name: z.string(),
+  code: z.string(),
+  allocatedCapacity: z.number().int().nonnegative(),
+  occupied: z.number().int().nonnegative(),
+  available: z.number().int().nonnegative(),
+  occupancyPercentage: z.number().min(0).max(100),
+  isSaturated: z.boolean(),
+  businessUnitId: z.string().nullable(),
+});
+export type ParkingAreaMetrics = z.infer<typeof ParkingAreaMetricsSchema>;
+
 // --- Space Category ---
 export const SpaceCategorySchema = z.object({
   id: z.string().min(1),
@@ -62,6 +121,7 @@ export const ParkingSessionSchema = z.object({
   facilityId: z.string().min(1),
   businessUnitId: z.string().min(1),
   spaceCategoryId: z.string().min(1),
+  parkingAreaId: z.string().nullable().optional(),
   licensePlate: z
     .string()
     .min(3, "Patente muy corta")
@@ -143,6 +203,8 @@ export const DashboardMetricsSchema = z.object({
   occupancyPercentage: z.number().min(0).max(100),
   alertLevel: AlertLevelEnum,
   units: z.array(BusinessUnitMetricsSchema),
+  areas: z.array(ParkingAreaMetricsSchema).default([]),
+  floatingBuffer: z.number().int().nonnegative().default(0),
   timestamp: z.string().datetime(),
 });
 export type DashboardMetrics = z.infer<typeof DashboardMetricsSchema>;

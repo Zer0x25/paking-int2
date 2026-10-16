@@ -2,14 +2,20 @@ import type {
   Facility,
   BusinessUnit,
   ParkingSession,
+  ParkingArea,
   DashboardMetrics,
   AlertLevel,
 } from "../types/schema";
+import {
+  calculateFacilityBuffer,
+  calculateAreaAvailability,
+} from "./areaAllocationRules";
 
 export interface DashboardInput {
   facility: Facility;
   businessUnits: BusinessUnit[];
   activeSessions: ParkingSession[];
+  areas?: ParkingArea[];
   timestamp?: string;
 }
 
@@ -46,6 +52,10 @@ export function computeDashboardMetrics(input: DashboardInput): DashboardMetrics
     };
   });
 
+  const areasList = input.areas || [];
+  const floatingBuffer = calculateFacilityBuffer(totalCapacity, areasList);
+  const areasMetrics = areasList.map((a) => calculateAreaAvailability(a, activeSessions));
+
   return {
     facilityId: facility.id,
     totalCapacity,
@@ -54,6 +64,8 @@ export function computeDashboardMetrics(input: DashboardInput): DashboardMetrics
     occupancyPercentage,
     alertLevel,
     units,
+    areas: areasMetrics,
+    floatingBuffer,
     timestamp: input.timestamp || new Date().toISOString(),
   };
 }

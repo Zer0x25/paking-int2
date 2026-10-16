@@ -3,13 +3,21 @@ import type {
   BusinessUnit,
   EventBooking,
   ParkingSession,
+  ParkingArea,
+  ParkingAreaMetrics,
 } from "../types/schema";
+import {
+  calculateFacilityBuffer,
+  calculateAreaAvailability,
+  canAdmitVehicleToArea,
+} from "./areaAllocationRules";
 
 export interface AllocationContext {
   facility: Facility;
   businessUnits: BusinessUnit[];
   events: EventBooking[];
   activeSessions: ParkingSession[];
+  areas?: ParkingArea[];
   currentTime?: string;
 }
 
@@ -20,6 +28,8 @@ export interface AvailabilityResult {
   totalAvailable: number;
   dynamicPoolRemaining: number;
   occupancyPercentage: number;
+  floatingBuffer: number;
+  areas: ParkingAreaMetrics[];
   unitAvailability: Record<
     string,
     {
@@ -106,6 +116,10 @@ export function calculateAvailability(ctx: AllocationContext): AvailabilityResul
   const occupancyPercentage =
     totalCapacity > 0 ? Math.min(100, Math.round((totalOccupied / totalCapacity) * 100)) : 0;
 
+  const areasList = ctx.areas || [];
+  const floatingBuffer = calculateFacilityBuffer(totalCapacity, areasList);
+  const areaMetrics = areasList.map((area) => calculateAreaAvailability(area, activeSessions));
+
   return {
     facilityId: ctx.facility.id,
     totalCapacity,
@@ -113,13 +127,26 @@ export function calculateAvailability(ctx: AllocationContext): AvailabilityResul
     totalAvailable,
     dynamicPoolRemaining,
     occupancyPercentage,
+    floatingBuffer,
+    areas: areaMetrics,
     unitAvailability,
   };
 }
 
 export function canAdmitVehicle(
-  ctx: AllocationContext & { businessUnit: BusinessUnit }
+  ctx: AllocationContext & { businessUnit: BusinessUnit; parkingAreaId?: string }
 ): { allowed: boolean; reason?: string } {
+  // If a parking area is specified, validate area rules first
+  if (ctx.parkingAreaId && ctx.areas) {
+    const area = ctx.areas.find((a) => a.id === ctx.parkingAreaId);
+    if (area) {
+      const areaCheck = canAdmitVehicleToArea(area, ctx.activeSessions, ctx.businessUnit.id);
+      if (!areaCheck.allowed) {
+        return areaCheck;
+      }
+    }
+  }
+
   const availability = calculateAvailability(ctx);
   const unitInfo = availability.unitAvailability[ctx.businessUnit.id];
 

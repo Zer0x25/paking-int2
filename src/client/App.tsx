@@ -5,7 +5,7 @@ import { VehicleExitForm } from "./components/VehicleExitForm";
 import { OperationalDashboard } from "./components/OperationalDashboard";
 import { FacilityConfigView } from "./components/FacilityConfigView";
 import { LoginView } from "./components/LoginView";
-import type { Facility, BusinessUnit, SpaceCategory, EventBooking, DashboardMetrics, User } from "@core/types/schema";
+import type { Facility, BusinessUnit, SpaceCategory, EventBooking, DashboardMetrics, User, ParkingArea } from "@core/types/schema";
 import { defaultFacility, defaultBusinessUnits, defaultEvents } from "@server/services/allocation-service";
 
 export const App: React.FC = () => {
@@ -22,6 +22,7 @@ export const App: React.FC = () => {
     { id: "cat-acc", facilityId: defaultFacility.id, name: "Accesible (PMR)", code: "ACC", allocatedSlots: 10 },
     { id: "cat-vip", facilityId: defaultFacility.id, name: "VIP / Reservado", code: "VIP", allocatedSlots: 10 },
   ]);
+  const [areas, setAreas] = useState<ParkingArea[]>([]);
   const [events, setEvents] = useState<EventBooking[]>(defaultEvents);
   const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(false);
@@ -34,6 +35,7 @@ export const App: React.FC = () => {
         if (data.facility) setFacility(data.facility);
         if (data.businessUnits) setBusinessUnits(data.businessUnits);
         if (data.categories) setSpaceCategories(data.categories);
+        if (data.areas) setAreas(data.areas);
         if (data.events) setEvents(data.events);
       }
     } catch {
@@ -158,6 +160,7 @@ export const App: React.FC = () => {
                 facilityId={facility.id}
                 businessUnits={businessUnits}
                 spaceCategories={spaceCategories}
+                areas={areas}
                 onEntrySuccess={fetchDashboard}
               />
               <VehicleExitForm facilityId={facility.id} onExitSuccess={fetchDashboard} />

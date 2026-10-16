@@ -5,6 +5,7 @@ export interface CreateSessionInput {
   facilityId: string;
   businessUnitId: string;
   spaceCategoryId: string;
+  parkingAreaId?: string | null;
   licensePlate: string;
   operatorUserId: string;
   deviceId?: string;
@@ -49,6 +50,7 @@ export function createParkingSession(input: CreateSessionInput): ParkingSession 
     facilityId: input.facilityId,
     businessUnitId: input.businessUnitId,
     spaceCategoryId: input.spaceCategoryId,
+    parkingAreaId: input.parkingAreaId || null,
     licensePlate: normPlate,
     entryTime: now,
     exitTime: null,

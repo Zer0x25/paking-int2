@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { BusinessUnit, SpaceCategory } from "@core/types/schema";
+import type { BusinessUnit, SpaceCategory, ParkingArea } from "@core/types/schema";
 import { normalizeLicensePlate, createParkingSession } from "@core/models/parking-session";
 import { saveLocalSession, enqueueOutboxMutation } from "../db/indexed-db";
 
@@ -7,6 +7,7 @@ interface VehicleEntryFormProps {
   facilityId: string;
   businessUnits: BusinessUnit[];
   spaceCategories: SpaceCategory[];
+  areas?: ParkingArea[];
   onEntrySuccess?: () => void;
 }
 
@@ -14,11 +15,13 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
   facilityId,
   businessUnits,
   spaceCategories,
+  areas = [],
   onEntrySuccess,
 }) => {
   const [plate, setPlate] = useState("");
   const [selectedUnit, setSelectedUnit] = useState(businessUnits[0]?.id || "");
   const [selectedCategory, setSelectedCategory] = useState(spaceCategories[0]?.id || "");
+  const [selectedArea, setSelectedArea] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [lastTicket, setLastTicket] = useState<any>(null);
@@ -36,6 +39,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
 
     const targetUnit = selectedUnit || businessUnits[0]?.id;
     const targetCategory = selectedCategory || spaceCategories[0]?.id;
+    const targetArea = selectedArea || null;
     const now = new Date().toISOString();
     const sessionId = crypto.randomUUID();
 
@@ -44,6 +48,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
       facilityId,
       businessUnitId: targetUnit,
       spaceCategoryId: targetCategory,
+      parkingAreaId: targetArea,
       licensePlate: cleanPlate,
       entryTime: now,
       deviceId: "gate-terminal-01",
@@ -71,11 +76,13 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
         // Cache locally as well
         await saveLocalSession(data.session);
 
+        const areaName = areas.find((a) => a.id === targetArea)?.name;
         setLastTicket({
           ticketNumber: data.ticket?.ticketNumber || `TK-${Date.now().toString().slice(-6)}`,
           plate: cleanPlate,
           entryTime: now,
           unitName: businessUnits.find((u) => u.id === targetUnit)?.name || "General",
+          areaName: areaName || "Sector Libre",
         });
 
         setMessage({ text: `✓ Ingreso registrado exitosamente (Online)`, type: "success" });
@@ -83,11 +90,11 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
         if (onEntrySuccess) onEntrySuccess();
       } catch {
         // Fallback to offline registration on network error
-        await handleOfflineEntry(sessionId, cleanPlate, targetUnit, targetCategory, now);
+        await handleOfflineEntry(sessionId, cleanPlate, targetUnit, targetCategory, targetArea, now);
       }
     } else {
       // Direct Offline mode
-      await handleOfflineEntry(sessionId, cleanPlate, targetUnit, targetCategory, now);
+      await handleOfflineEntry(sessionId, cleanPlate, targetUnit, targetCategory, targetArea, now);
     }
 
     setLoading(false);
@@ -98,6 +105,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
     cleanPlate: string,
     targetUnit: string,
     targetCategory: string,
+    targetArea: string | null,
     now: string
   ) => {
     const session = createParkingSession({
@@ -105,6 +113,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
       facilityId,
       businessUnitId: targetUnit,
       spaceCategoryId: targetCategory,
+      parkingAreaId: targetArea,
       licensePlate: cleanPlate,
       entryTime: now,
       operatorUserId: "offline-operator",
@@ -119,6 +128,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
         facilityId,
         businessUnitId: targetUnit,
         spaceCategoryId: targetCategory,
+        parkingAreaId: targetArea,
         licensePlate: cleanPlate,
         entryTime: now,
       },
@@ -128,11 +138,13 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
       retryCount: 0,
     });
 
+    const areaName = areas.find((a) => a.id === targetArea)?.name;
     setLastTicket({
       ticketNumber: `OFF-${Date.now().toString().slice(-6)}`,
       plate: cleanPlate,
       entryTime: now,
       unitName: businessUnits.find((u) => u.id === targetUnit)?.name || "General",
+      areaName: areaName || "Sector Libre",
       offline: true,
     });
 
@@ -167,7 +179,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div className="form-group">
-            <label className="form-label">Área / Destino</label>
+            <label className="form-label">Unidad / Destino</label>
             <select
               className="form-select"
               value={selectedUnit}
@@ -195,6 +207,24 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
               ))}
             </select>
           </div>
+        </div>
+
+        {/* Parking Area Selector (Feature 002) */}
+        <div className="form-group">
+          <label className="form-label">Área / Sector Físico de Estacionamiento</label>
+          <select
+            className="form-select"
+            value={selectedArea}
+            onChange={(e) => setSelectedArea(e.target.value)}
+          >
+            <option value="">(Asignación Automática / Flotante)</option>
+            {areas.map((area) => (
+              <option key={area.id} value={area.id}>
+                [{area.code}] {area.name} — {area.allocatedCapacity} plazas
+                {area.businessUnitId ? " (Exclusiva)" : " (Compartida)"}
+              </option>
+            ))}
+          </select>
         </div>
 
         <button
@@ -239,6 +269,9 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
           </div>
           <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
             Ticket: {lastTicket.ticketNumber} | Destino: {lastTicket.unitName}
+          </div>
+          <div style={{ fontSize: "0.85rem", color: "#38bdf8", fontWeight: 600, marginTop: "0.2rem" }}>
+            Sector Asignado: {lastTicket.areaName}
           </div>
           <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
             Hora: {new Date(lastTicket.entryTime).toLocaleTimeString()}

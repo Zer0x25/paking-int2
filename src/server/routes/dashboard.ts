@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { computeDashboardMetrics } from "@core/rules/dashboard-calculator";
 import { defaultFacility, defaultBusinessUnits } from "../services/allocation-service";
 import { mockSessionsRepo } from "./parking";
+import { parkingAreasStore } from "./facilities";
 
 export const dashboardRoutes = new Hono();
 
@@ -16,6 +17,7 @@ dashboardRoutes.get("/:id/dashboard", (c) => {
     facility,
     businessUnits: defaultBusinessUnits,
     activeSessions: mockSessionsRepo.filter((s) => s.facilityId === facilityId),
+    areas: parkingAreasStore.filter((a) => a.facilityId === facilityId && a.isActive),
   });
 
   return c.json(metrics);

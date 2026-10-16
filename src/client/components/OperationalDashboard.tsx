@@ -32,6 +32,8 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
     return "var(--color-success)";
   };
 
+  const areasList = metrics.areas || [];
+
   return (
     <div>
       {/* Header with Title and Alert Level */}
@@ -39,14 +41,14 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
         <div>
           <h2 style={{ fontSize: "1.6rem", fontWeight: 700 }}>Monitoreo de Ocupación en Vivo</h2>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-            Actualización automática de plazas compartidas y control de cuotas
+            Actualización automática de plazas compartidas, cuotas dinámicas y aforo por áreas físicas
           </p>
         </div>
         <div>{getAlertBadge(metrics.alertLevel)}</div>
       </div>
 
       {/* Primary KPI Grid */}
-      <div className="dashboard-grid">
+      <div className="dashboard-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
         <div className="glass-panel metric-card">
           <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase" }}>
             Ocupación Global
@@ -88,65 +90,171 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
             {metrics.totalAvailable}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "auto" }}>
-            Plazas desocupadas en el recinto
+            Plazas libres en el recinto
+          </span>
+        </div>
+
+        <div className="glass-panel metric-card">
+          <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase" }}>
+            Reserva Flotante (Buffer)
+          </span>
+          <div className="metric-val" style={{ color: "#38bdf8" }}>
+            {metrics.floatingBuffer ?? 0}
+          </div>
+          <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "auto" }}>
+            Plazas libres no sectorizadas
           </span>
         </div>
       </div>
 
+      {/* Physical Parking Areas Breakdown (Feature 002) */}
+      <div style={{ marginTop: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h3 style={{ fontSize: "1.2rem", fontWeight: 600 }}>
+            Distribución Física por Áreas de Estacionamiento
+          </h3>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+            {areasList.length} sectores operativos
+          </span>
+        </div>
+
+        {areasList.length === 0 ? (
+          <div className="glass-panel" style={{ padding: "1.5rem", color: "var(--text-muted)", textAlign: "center" }}>
+            No hay áreas físicas configuradas en esta instalación.
+          </div>
+        ) : (
+          <div className="dashboard-grid">
+            {areasList.map((area) => {
+              const pct = area.occupancyPercentage;
+              return (
+                <div
+                  key={area.areaId}
+                  className="glass-panel"
+                  style={{
+                    padding: "1.25rem",
+                    borderLeft: `4px solid ${area.isSaturated ? "var(--color-danger)" : "#38bdf8"}`,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            fontFamily: "var(--font-mono)",
+                            background: "rgba(56, 189, 248, 0.15)",
+                            color: "#38bdf8",
+                            padding: "0.15rem 0.4rem",
+                            borderRadius: "4px",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {area.code}
+                        </span>
+                        <h4 style={{ fontSize: "1.05rem", fontWeight: 700 }}>{area.name}</h4>
+                      </div>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        {area.businessUnitId ? "Exclusiva por Convenio" : "Uso Compartido Multi-Negocio"}
+                      </span>
+                    </div>
+                    {area.isSaturated && (
+                      <span className="badge-alert badge-critical" style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}>
+                        LLENO
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: "1rem" }}>
+                    <div>
+                      <span style={{ fontSize: "1.6rem", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+                        {area.occupied}
+                      </span>
+                      <span style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                        {" "}/ {area.allocatedCapacity} plazas
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 600, color: getBarColor(pct) }}>
+                      {pct}%
+                    </span>
+                  </div>
+
+                  <div className="progress-bar-container" style={{ marginTop: "0.5rem" }}>
+                    <div
+                      className="progress-bar-fill"
+                      style={{
+                        width: `${Math.min(100, pct)}%`,
+                        backgroundColor: getBarColor(pct),
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
+                    <span>Libres: <strong style={{ color: "var(--text-primary)" }}>{area.available}</strong></span>
+                    <span>Capacidad dinámica</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Business Units Breakdown */}
-      <h3 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem" }}>
-        Asignación Dinámica por Unidad de Negocio
-      </h3>
-      <div className="dashboard-grid">
-        {metrics.units.map((unit) => {
-          const quota = unit.allocatedQuota;
-          const pct = quota > 0 ? Math.min(100, Math.round((unit.occupied / quota) * 100)) : 0;
-          const quotaBadge =
-            unit.quotaType === "guaranteed"
-              ? "Prioridad Hotel (Garantizada)"
-              : unit.quotaType === "contractual"
-              ? "Eventos (Contractual)"
-              : "Rotativa Comercial (Dinámica)";
+      <div style={{ marginTop: "2rem" }}>
+        <h3 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem" }}>
+          Asignación Dinámica por Unidad de Negocio
+        </h3>
+        <div className="dashboard-grid">
+          {metrics.units.map((unit) => {
+            const quota = unit.allocatedQuota;
+            const pct = quota > 0 ? Math.min(100, Math.round((unit.occupied / quota) * 100)) : 0;
+            const quotaBadge =
+              unit.quotaType === "guaranteed"
+                ? "Prioridad Hotel (Garantizada)"
+                : unit.quotaType === "contractual"
+                ? "Eventos (Contractual)"
+                : "Rotativa Comercial (Dinámica)";
 
-          return (
-            <div key={unit.businessUnitId} className={`glass-panel unit-card ${unit.quotaType}`}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <h4 style={{ fontSize: "1.1rem", fontWeight: 700 }}>{unit.name}</h4>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{quotaBadge}</span>
+            return (
+              <div key={unit.businessUnitId} className={`glass-panel unit-card ${unit.quotaType}`}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <h4 style={{ fontSize: "1.1rem", fontWeight: 700 }}>{unit.name}</h4>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{quotaBadge}</span>
+                  </div>
+                  {unit.isSaturated && (
+                    <span style={{ color: "var(--color-danger)", fontSize: "0.75rem", fontWeight: 700 }}>
+                      CUPO LLENO
+                    </span>
+                  )}
                 </div>
-                {unit.isSaturated && (
-                  <span style={{ color: "var(--color-danger)", fontSize: "0.75rem", fontWeight: 700 }}>
-                    CUPO LLENO
+
+                <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginTop: "1rem" }}>
+                  <span style={{ fontSize: "1.8rem", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+                    {unit.occupied}
                   </span>
-                )}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginTop: "1rem" }}>
-                <span style={{ fontSize: "1.8rem", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
-                  {unit.occupied}
-                </span>
-                {quota > 0 ? (
-                  <span style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>/ {quota} cupos</span>
-                ) : (
-                  <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>vehículos</span>
-                )}
-              </div>
-
-              {quota > 0 && (
-                <div className="progress-bar-container">
-                  <div
-                    className="progress-bar-fill"
-                    style={{
-                      width: `${pct}%`,
-                      backgroundColor: getBarColor(pct),
-                    }}
-                  />
+                  {quota > 0 ? (
+                    <span style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>/ {quota} cupos</span>
+                  ) : (
+                    <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>vehículos</span>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {quota > 0 && (
+                  <div className="progress-bar-container">
+                    <div
+                      className="progress-bar-fill"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: getBarColor(pct),
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
