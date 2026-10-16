@@ -7,3 +7,4 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | ID | Título | Estado | Fecha |
 |---|---|---|---|
 | [ADR-001](ADR-001-agentic-software-factory.md) | Adopción de Fábrica de Software Agéntica con Spec-Kit y Harness Engineering | Aceptado | 2026-10-15 |
+| [ADR-002](ADR-002-stack-architecture.md) | Arquitectura y Stack Tecnológico para el Sistema Inteligente de Gestión de Estacionamientos (Cloudflare Workers, D1, PWA Offline-First) | Aceptado | 2026-10-15 |

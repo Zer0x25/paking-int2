@@ -1,4 +1,7 @@
 # Instrucciones del Repositorio para Agentes de IA (AGENTS.md)
+# Proyecto: Sistema Inteligente de Gestión de Estacionamientos (paking-int2)
+
+Aplicación web privada, responsive y tipo PWA Offline-First para la administración y asignación dinámica de estacionamientos compartidos en complejos multi-negocio (centros de convenciones con hotel, eventos, restaurante y gimnasio). Desarrollada con arquitectura hexagonal en TypeScript (Cloudflare Workers + D1 + Hono en backend, Vite + React + IndexedDB en frontend PWA).
 
 Este repositorio opera bajo el estándar **Spec-Driven Development (SDD)** con **GitHub Spec-Kit (specify-cli)** y **Harness Engineering**.
 
@@ -17,8 +20,8 @@ Este repositorio opera bajo el estándar **Spec-Driven Development (SDD)** con *
 6. **Verificación**: Validación de criterios observables en navegador real y apertura de Pull Request.
 
 ## 3. Comandos de Verificación Local (Definition of Done)
-- Pruebas y Cobertura: Debe mantenerse >= 85%.
-- Linters y Tipos: Exit code 0 en todos los chequeos.
+- Pruebas y Cobertura: Vitest con cobertura >= 85%.
+- Linters y Tipos: `tsc --noEmit` y ESLint con exit code 0 en todos los chequeos.
 - Comandos destructivos prohibidos: `rm -rf`, `git push --force`, `--no-verify`.
 
 ## 4. Bucle de Mejora Continua para la Plantilla Maestra
