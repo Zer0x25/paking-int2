@@ -1,0 +1,231 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sistema Inteligente de Gestión de Estacionamientos API",
+    "version": "1.0.0",
+    "description": "API REST en Cloudflare Workers para administración de estacionamientos, cupos dinámicos, control operacional y sincronización offline-first."
+  },
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "summary": "Iniciar sesión y obtener token JWT",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "password"],
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Autenticación exitosa",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": { "type": "string" },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "username": { "type": "string" },
+                        "fullName": { "type": "string" },
+                        "role": { "type": "string", "enum": ["admin", "operator"] },
+                        "facilityId": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Credenciales inválidas" }
+        }
+      }
+    },
+    "/api/facilities/{id}/dashboard": {
+      "get": {
+        "summary": "Obtener métricas de ocupación y alertas en tiempo real",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Métricas consolidadas de ocupación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "facilityId": { "type": "string" },
+                    "totalCapacity": { "type": "integer" },
+                    "totalOccupied": { "type": "integer" },
+                    "totalAvailable": { "type": "integer" },
+                    "occupancyPercentage": { "type": "number" },
+                    "alertLevel": { "type": "string", "enum": ["normal", "warning", "critical"] },
+                    "units": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "businessUnitId": { "type": "string" },
+                          "name": { "type": "string" },
+                          "code": { "type": "string" },
+                          "priorityLevel": { "type": "integer" },
+                          "quotaType": { "type": "string" },
+                          "occupied": { "type": "integer" },
+                          "allocatedQuota": { "type": "integer" },
+                          "isSaturated": { "type": "boolean" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/parking-sessions/entry": {
+      "post": {
+        "summary": "Registrar entrada de vehículo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["facilityId", "businessUnitId", "spaceCategoryId", "licensePlate"],
+                "properties": {
+                  "id": { "type": "string", "description": "UUID opcional generado por cliente offline" },
+                  "facilityId": { "type": "string" },
+                  "businessUnitId": { "type": "string" },
+                  "spaceCategoryId": { "type": "string" },
+                  "licensePlate": { "type": "string" },
+                  "entryTime": { "type": "string", "format": "date-time" },
+                  "deviceId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Entrada registrada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": { "type": "object" },
+                    "ticket": { "type": "object" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "description": "Placa ya se encuentra activa adentro o cupo agotado" }
+        }
+      }
+    },
+    "/api/parking-sessions/exit": {
+      "post": {
+        "summary": "Registrar salida de vehículo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["facilityId", "licensePlate"],
+                "properties": {
+                  "facilityId": { "type": "string" },
+                  "licensePlate": { "type": "string" },
+                  "exitTime": { "type": "string", "format": "date-time" },
+                  "deviceId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Salida procesada exitosamente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": { "type": "object" },
+                    "durationMinutes": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "No se encontró sesión activa para la placa indicada" }
+        }
+      }
+    },
+    "/api/sync/delta": {
+      "post": {
+        "summary": "Sincronizar mutaciones offline por lotes (Outbox)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["facilityId", "deviceId", "mutations"],
+                "properties": {
+                  "facilityId": { "type": "string" },
+                  "deviceId": { "type": "string" },
+                  "mutations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["id", "type", "payload", "clientTimestamp"],
+                      "properties": {
+                        "id": { "type": "string" },
+                        "type": { "type": "string", "enum": ["VEHICLE_ENTRY", "VEHICLE_EXIT"] },
+                        "payload": { "type": "object" },
+                        "clientTimestamp": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado de conciliación de lote",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "processed": { "type": "integer" },
+                    "succeeded": { "type": "array", "items": { "type": "string" } },
+                    "conflicts": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
