@@ -24,6 +24,7 @@ coverage/
 # Builds y artefactos efímeros
 dist/
 build/
+.wrangler/
 *.log
 .DS_Store
 
