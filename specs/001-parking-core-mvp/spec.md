@@ -5,6 +5,15 @@
 **Status**: Draft  
 **Input**: Motor de asignación y control de estacionamientos con prioridades dinámicas para instalaciones multi-negocio (Hotel, Eventos, Comercial) y operaciones de entrada/salida offline-first.
 
+## Clarifications
+
+### Session 2026-10-15
+- Q: ¿Cómo se maneja la asignación de espacios cuando un área comercial agota su cuota pero hay espacios físicos vacíos reservados para el Hotel o Eventos futuros? → A: Los espacios reservados para el Hotel y Eventos contratados están blindados; si el área comercial llega a su límite, no puede canibalizar las cuotas protegidas aunque físicamente se vean plazas libres en ese instante.
+- Q: ¿Qué identificador primario se utiliza para el control de entrada y salida? → A: Placa patente vehicular alfanumérica normalizada (mayúsculas sin espacios/guiones).
+- Q: ¿Qué alcance tiene el modo offline en las garitas? → A: Registro completo de entradas y salidas en IndexedDB local con cálculo de permanencia local y sincronización asíncrona por lotes (outbox) al recuperar conexión.
+- Q: ¿Se contemplan cobros monetarios o pasarelas de pago en el MVP? → A: No, el MVP se enfoca exclusivamente en control de ocupación, asignación dinámica por cuotas, prioridades y trazabilidad operativa.
+
+
 ---
 
 ## User Scenarios & Testing *(mandatory)*
