@@ -7,7 +7,11 @@
 
 ## Clarifications
 
-<!-- Las aclaraciones identificadas en la fase inicial se formalizan aquí mediante $speckit-clarify -->
+### Session 2026-10-15
+- Q: ¿Cómo deben representarse y gestionarse las plazas de estacionamiento dentro de cada área? → A: Capacidad numérica agregada (cupo total por instalación y cupo dinámico por área), gestionando ocupación en tiempo real sin requerir micro-gestión individual de plazas numeradas.
+- Q: ¿Cómo se vinculan las áreas físicas de estacionamiento con las Unidades de Negocio? → A: Modelo flexible: las áreas pueden ser de uso compartido (abiertas a múltiples unidades de negocio) o reservadas exclusivamente para una unidad específica (ej. Zona Exclusiva Hotel).
+- Q: ¿Qué regla de integridad rige si la suma de capacidades de las áreas no coincide con la capacidad total de la instalación? → A: Se permite que la sumatoria de plazas de las áreas sea menor o igual al total del recinto (las plazas no asignadas a un área específica quedan como 'Reserva Flotante / Buffer General' del complejo); se bloquea si la suma supera la capacidad física total.
+- Q: ¿Qué comportamiento debe tener el sistema si se intenta reducir la capacidad de un área por debajo de los vehículos actualmente estacionados? → A: Bloqueo estricto: el sistema rechaza la reducción y exige que la nueva capacidad sea mayor o igual a los vehículos que se encuentran actualmente aparcados en dicha área.
 
 ---
 
