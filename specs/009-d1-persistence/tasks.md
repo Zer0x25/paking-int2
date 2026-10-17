@@ -150,7 +150,7 @@ Every task follows `- [ ] T### [P?] [US#?] Description with exact file path`.
 - [ ] T046 [P] Update `README.md` with local D1 initialization, `.dev.vars` setup, and worker/PWA start instructions.
 - [ ] T047 Verify local catalog seeding is idempotent and preserves records already edited in D1 in `tests/workers/d1-foundation.worker.test.ts`.
 - [ ] T048 Run unit coverage with the existing V8 provider and Worker coverage with Istanbul instrumentation; include the changed production modules and retain at least 85% lines, functions, branches, and statements in `vitest.config.ts`, `vitest.workers.config.ts`, and `package.json`.
-- [ ] T049 Run `npm run typecheck`, `npm run lint`, `npm run build`, and `npm audit`; confirm no `TODO:`/`FIXME:` markers remain in production source and resolve any gate failures.
+- [ ] T049 Run `npm run typecheck`, `npm run lint`, `npm run build`, and `npm audit`; confirm no unresolved-work markers remain in production source and resolve any gate failures.
 - [ ] T050 Verify Configuración, Garita, Dashboard, role restrictions, restart persistence, and offline sync in a real browser and record observed results in `history/prompts/PHR-012-d1-persistence.prompt.md`.
 - [ ] T051 Run Spec Kit convergence against `specs/009-d1-persistence/spec.md`, `plan.md`, and `tasks.md`; append any uncovered work to `specs/009-d1-persistence/tasks.md`.
 - [ ] T052 Record actual migration, test, coverage, typecheck, lint, build, audit, browser, and convergence results plus uncommitted status in `history/prompts/PHR-012-d1-persistence.prompt.md`.
