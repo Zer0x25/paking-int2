@@ -15,3 +15,4 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | [ADR-007](ADR-007-workers-runtime-test-runner.md) | Ejecución de pruebas de rutas sobre el runtime Workers | Aceptado | 2026-10-17 |
 | [ADR-008](ADR-008-responsive-design-system-and-theme.md) | Sistema visual adaptable y preferencia local de tema | Aceptado | 2026-10-17 |
 | [ADR-009](ADR-009-eslint-tooling.md) | ESLint como gate de calidad local | Aceptado | 2026-10-17 |
+| [ADR-010](ADR-010-drizzle-security-remediation.md) | Remediación de dependencias vulnerables de Drizzle | Aceptado | 2026-10-17 |

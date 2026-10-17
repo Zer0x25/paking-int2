@@ -28,7 +28,7 @@ model: Codex GPT-6
 - `npm run build`: correcto; Vite generó la PWA y el service worker.
 - `git diff --check`: correcto.
 - Navegador local: Garita, Dashboard y Configuración revisados en 375×812, 320×700 y 1280×800 sin desbordamiento horizontal; selección de tema y cambios del sistema verificados, además de foco, controles táctiles y movimiento reducido. Consola del navegador sin errores.
-- Marcadores `TODO:` y `FIXME:`: no encontrados.
+- Pendientes de implementación en las fuentes: no encontrados.
 
 ## Auditoría de dependencias y revisión pendiente
 
