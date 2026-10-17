@@ -1,10 +1,11 @@
 import { Hono } from "hono";
+import type { AppEnvironment } from "../types/app-environment";
 import { computeDashboardMetrics } from "@core/rules/dashboard-calculator";
 import { defaultFacility, businessUnitsStore } from "../services/allocation-service";
 import { mockSessionsRepo } from "./parking";
 import { parkingAreasStore } from "./facilities";
 
-export const dashboardRoutes = new Hono();
+export const dashboardRoutes = new Hono<AppEnvironment>();
 
 // GET /api/facilities/:id/dashboard
 dashboardRoutes.get("/:id/dashboard", (c) => {

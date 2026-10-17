@@ -8,9 +8,10 @@ import {
   updateActiveParkingSessionPlate,
 } from "@core/models/parking-session";
 import { authMiddleware } from "../middleware/auth";
+import type { AppEnvironment } from "../types/app-environment";
 import { mockSessionsRepo, parkingSessionAuditStore } from "./parking";
 
-export const syncRoutes = new Hono();
+export const syncRoutes = new Hono<AppEnvironment>();
 syncRoutes.use("*", authMiddleware());
 
 const DeltaSyncPayloadSchema = z.object({
@@ -64,7 +65,7 @@ syncRoutes.post("/delta", async (c) => {
         });
 
         mockSessionsRepo.push(session);
-        const user = (c.get as any)("user") as { userId?: string } | undefined;
+        const user = c.get("user");
         parkingSessionAuditStore.push({
           userId: user?.userId || payload.operatorUserId || "offline-operator",
           action: "created",
@@ -103,7 +104,7 @@ syncRoutes.post("/delta", async (c) => {
           payload.exitTime || mut.clientTimestamp
         );
         mockSessionsRepo[sessionIndex] = updated;
-        const user = (c.get as any)("user") as { userId?: string } | undefined;
+        const user = c.get("user");
         parkingSessionAuditStore.push({
           userId: user?.userId || payload.operatorUserId || "offline-operator",
           action: "exited",
@@ -132,7 +133,7 @@ syncRoutes.post("/delta", async (c) => {
           expectedVersion: payload.expectedVersion,
         });
         mockSessionsRepo[sessionIndex] = updated;
-        const user = (c.get as any)("user") as { userId?: string } | undefined;
+        const user = c.get("user");
         parkingSessionAuditStore.push({
           userId: user?.userId || payload.operatorUserId || "offline-operator",
           action: "plate_updated",
@@ -144,10 +145,10 @@ syncRoutes.post("/delta", async (c) => {
         });
         succeeded.push(mut.id);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       conflicts.push({
         mutationId: mut.id,
-        reason: err.message || "Error al procesar mutación",
+        reason: err instanceof Error ? err.message : "Error al procesar mutación",
       });
     }
   }

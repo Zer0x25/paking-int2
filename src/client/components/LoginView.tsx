@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { User } from "@core/types/schema";
+import { ThemeSelector } from "./ThemeSelector";
 
 interface LoginViewProps {
   onLoginSuccess: (user: User, token: string) => void;
@@ -50,7 +51,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         minHeight: "75vh",
       }}
     >
-      <div className="glass-panel" style={{ width: "100%", maxWidth: "420px", padding: "2.5rem" }}>
+      <div className="glass-panel login-card" style={{ width: "100%", maxWidth: "420px", padding: "2.5rem" }}>
+        <div className="login-toolbar"><ThemeSelector /></div>
         <div style={{ textAlign: "center", marginBottom: "2rem" }}>
           <h1 className="brand-title" style={{ justifyContent: "center", fontSize: "1.75rem", marginBottom: "0.5rem" }}>
             Smart Parking
@@ -62,8 +64,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Usuario</label>
+            <label className="form-label" htmlFor="login-username">Usuario</label>
             <input
+              id="login-username"
               type="text"
               className="form-input"
               placeholder="admin / operador"
@@ -74,8 +77,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Contraseña</label>
+            <label className="form-label" htmlFor="login-password">Contraseña</label>
             <input
+              id="login-password"
               type="password"
               className="form-input"
               placeholder="••••••••"
@@ -97,11 +101,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
         {error && (
           <div
+            role="alert"
             style={{
               marginTop: "1rem",
               padding: "0.75rem",
-              background: "rgba(239, 68, 68, 0.15)",
-              color: "#f87171",
+              background: "var(--color-danger-surface)",
+              color: "var(--color-danger)",
               borderRadius: "8px",
               fontSize: "0.85rem",
               textAlign: "center",

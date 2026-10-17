@@ -55,7 +55,6 @@ export function mergeActiveParkingSessions({
   localSessions: ParkingSession[];
   pendingMutations: SyncMutation[];
 }): ParkingSession[] {
-  const localById = new Map(localSessions.map((session) => [session.id, session]));
   const pendingExitIds = new Set(
     pendingMutations.flatMap((mutation) =>
       mutation.type === "VEHICLE_EXIT" && mutation.payload.sessionId

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FacilitySchema, BusinessUnitSchema, SpaceCategorySchema } from "@core/types/schema";
+import { FacilitySchema, BusinessUnitSchema } from "@core/types/schema";
 
 describe("User Story 4: Facility & Business Unit Configuration Validation (TDD)", () => {
   it("should validate a valid facility configuration", () => {

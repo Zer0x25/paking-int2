@@ -44,7 +44,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
   return (
     <div>
       {/* Header with Title and Alert Level */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+      <div className="dashboard-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <div>
           <h2 style={{ fontSize: "1.6rem", fontWeight: 700 }}>Monitoreo de Ocupación en Vivo</h2>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
@@ -105,7 +105,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
           <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase" }}>
             Reserva Flotante (Buffer)
           </span>
-          <div className="metric-val" style={{ color: "#38bdf8" }}>
+          <div className="metric-val" style={{ color: "var(--color-info)" }}>
             {metrics.floatingBuffer ?? 0}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "auto" }}>
@@ -116,7 +116,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
 
       {/* Physical Parking Areas Breakdown (Feature 002) */}
       <div style={{ marginTop: "2rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div className="dashboard-section-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h3 style={{ fontSize: "1.2rem", fontWeight: 600 }}>
             Distribución Física por Áreas de Estacionamiento
           </h3>
@@ -139,7 +139,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
                   className="glass-panel"
                   style={{
                     padding: "1.25rem",
-                    borderLeft: `4px solid ${area.isSaturated ? "var(--color-danger)" : "#38bdf8"}`,
+                    borderLeft: `4px solid ${area.isSaturated ? "var(--color-danger)" : "var(--color-info)"}`,
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -149,8 +149,8 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
                           style={{
                             fontSize: "0.75rem",
                             fontFamily: "var(--font-mono)",
-                            background: "rgba(56, 189, 248, 0.15)",
-                            color: "#38bdf8",
+                            background: "var(--color-info-surface)",
+                            color: "var(--color-info)",
                             padding: "0.15rem 0.4rem",
                             borderRadius: "4px",
                             fontWeight: 700,

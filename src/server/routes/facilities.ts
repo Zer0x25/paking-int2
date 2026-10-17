@@ -1,8 +1,7 @@
 import { Hono } from "hono";
-import type { TokenPayload } from "../middleware/auth";
+import type { AppEnvironment } from "../types/app-environment";
 import {
   FacilitySchema,
-  CreateFacilityInputSchema,
   UpdateFacilityInputSchema,
   CreateParkingAreaInputSchema,
   UpdateParkingAreaCapacityInputSchema,
@@ -49,7 +48,7 @@ import {
 import { mockSessionsRepo } from "./parking";
 import { authMiddleware } from "../middleware/auth";
 
-export const facilityRoutes = new Hono<{ Variables: { user: TokenPayload } }>();
+export const facilityRoutes = new Hono<AppEnvironment>();
 export { businessUnitsStore };
 
 // Memory store of facilities
@@ -132,8 +131,8 @@ facilityRoutes.put("/:id", async (c) => {
 
     try {
       validateFacilityCapacity(totalCapacity, existingAreas, activeSessionsCount);
-    } catch (err: any) {
-      return c.json({ error: err.message }, 409);
+    } catch (err: unknown) {
+      return c.json({ error: err instanceof Error ? err.message : "Error de capacidad" }, 409);
     }
     facility.totalCapacity = totalCapacity;
   }
@@ -340,8 +339,8 @@ facilityRoutes.post("/:id/areas", async (c) => {
     const newArea = createParkingArea(parsed.data, existingAreas, facility.totalCapacity);
     parkingAreasStore.push(newArea);
     return c.json({ area: newArea }, 201);
-  } catch (err: any) {
-    return c.json({ error: err.message }, 409);
+  } catch (err: unknown) {
+    return c.json({ error: err instanceof Error ? err.message : "Error al crear el área" }, 409);
   }
 });
 
@@ -383,8 +382,8 @@ facilityRoutes.patch("/:id/areas/:areaId/capacity", async (c) => {
     }
 
     return c.json({ area: updatedArea }, 200);
-  } catch (err: any) {
-    return c.json({ error: err.message }, 409);
+  } catch (err: unknown) {
+    return c.json({ error: err instanceof Error ? err.message : "Error al ajustar la capacidad" }, 409);
   }
 });
 

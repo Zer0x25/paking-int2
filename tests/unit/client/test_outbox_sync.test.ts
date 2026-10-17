@@ -11,6 +11,7 @@ import {
   getCachedCatalogData,
 } from "@client/db/indexed-db";
 import { processDeltaSync, orderMutationsByTimestamp } from "@client/db/outbox-sync";
+import type { ApiPoster, SyncDeltaPayload } from "@client/db/outbox-sync";
 import type { SyncMutation, ParkingSession } from "@core/types/schema";
 import { SyncMutationSchema } from "@core/types/schema";
 
@@ -159,8 +160,8 @@ describe("User Story 1: Outbox Sync Manager & IndexedDB (TDD)", () => {
     await enqueueOutboxMutation(mutation);
 
     // Mock API client function
-    let payloadSent: any = null;
-    const mockApiPoster = async (endpoint: string, body: any) => {
+    let payloadSent: SyncDeltaPayload | null = null;
+    const mockApiPoster: ApiPoster = async (_endpoint, body) => {
       payloadSent = body;
       return {
         processed: 1,
@@ -173,7 +174,7 @@ describe("User Story 1: Outbox Sync Manager & IndexedDB (TDD)", () => {
 
     expect(result.processed).toBe(1);
     expect(result.succeeded).toContain("mut-002");
-    expect(payloadSent.mutations[0].id).toBe("mut-002");
+    expect(payloadSent).toMatchObject({ mutations: [{ id: "mut-002" }] });
   });
 
   it("should return immediately if outbox queue has no pending mutations", async () => {
@@ -200,12 +201,10 @@ describe("User Story 1: Outbox Sync Manager & IndexedDB (TDD)", () => {
     await enqueueOutboxMutation(mutation);
 
     const origFetch = global.fetch;
-    global.fetch = (async () => {
-      return {
-        ok: true,
-        json: async () => ({ processed: 1, succeeded: ["mut-fetch-1"], conflicts: [] }),
-      } as any;
-    }) as any;
+    global.fetch = async () => new Response(
+      JSON.stringify({ processed: 1, succeeded: ["mut-fetch-1"], conflicts: [] }),
+      { status: 200 }
+    );
 
     try {
       const result = await processDeltaSync(facilityId, deviceId);

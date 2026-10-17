@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import type { UserRole } from "@core/types/schema";
+import type { AppEnvironment } from "../types/app-environment";
 
 export interface TokenPayload {
   userId: string;
@@ -92,14 +93,14 @@ export async function verifyJwt(token: string, secret: string): Promise<TokenPay
 }
 
 export function authMiddleware(requiredRole?: UserRole) {
-  return async (c: Context, next: Next) => {
+  return async (c: Context<AppEnvironment>, next: Next) => {
     const authHeader = c.req.header("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return c.json({ error: "Token de autorización requerido" }, 401);
     }
 
     const token = authHeader.substring(7);
-    const secret = (c.env as any)?.JWT_SECRET || "supersecret_jwt_key_local_development";
+    const secret = c.env?.JWT_SECRET || "supersecret_jwt_key_local_development";
     const payload = await verifyJwt(token, secret);
 
     if (!payload) {

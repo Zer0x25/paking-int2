@@ -80,15 +80,15 @@ const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
   };
 
   const cardStyle: React.CSSProperties = {
-    background: "rgba(0, 0, 0, 0.25)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
+    background: "var(--color-surface-raised)",
+    border: "1px solid var(--color-border)",
     borderRadius: "10px",
     padding: "1.25rem 1.5rem",
   };
 
   if (editing) {
     return (
-      <form onSubmit={submit} style={cardStyle}>
+      <form onSubmit={submit} className="managed-area-editor" style={cardStyle}>
         <h5 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Editar área: {area.name}</h5>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem" }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -124,18 +124,18 @@ const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
   }
 
   return (
-    <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1.8fr 1.5fr 2fr", gap: "1.5rem", alignItems: "center" }}>
+    <div className="managed-area-card" style={{ ...cardStyle, display: "grid", gap: "1.25rem", alignItems: "center" }}>
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8", padding: "0.15rem 0.45rem", borderRadius: "4px", fontWeight: 700 }}>{area.code}</span>
+          <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", background: "var(--color-info-surface)", color: "var(--color-info)", padding: "0.15rem 0.45rem", borderRadius: "4px", fontWeight: 700 }}>{area.code}</span>
           <strong style={{ fontSize: "1.05rem", color: "var(--text-primary)" }}>{area.name}</strong>
         </div>
         <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.35rem" }}>{area.description || "Sin descripción física"}</div>
         <div style={{ marginTop: "0.4rem" }}>
           {area.businessUnitId ? (
-            <span style={{ fontSize: "0.7rem", background: "rgba(139, 92, 246, 0.2)", color: "#c4b5fd", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>🔒 Exclusiva: {exclusiveUnit || "Convenio"}</span>
+            <span style={{ fontSize: "0.7rem", background: "var(--color-surface-sunken)", color: "var(--color-accent)", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>🔒 Exclusiva: {exclusiveUnit || "Convenio"}</span>
           ) : (
-            <span style={{ fontSize: "0.7rem", background: "rgba(16, 185, 129, 0.2)", color: "#6ee7b7", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>🌐 Uso Compartido</span>
+            <span style={{ fontSize: "0.7rem", background: "var(--color-success-surface)", color: "var(--color-success)", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>🌐 Uso Compartido</span>
           )}
         </div>
       </div>
@@ -411,16 +411,16 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+    <div className="facility-config-view">
       {/* Global Feedback Banner */}
       {feedback && (
         <div
           style={{
             padding: "1rem 1.5rem",
             borderRadius: "10px",
-            backgroundColor: feedback.type === "success" ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
-            border: `1px solid ${feedback.type === "success" ? "#10b981" : "#ef4444"}`,
-            color: feedback.type === "success" ? "#34d399" : "#f87171",
+            backgroundColor: `var(${feedback.type === "success" ? "--color-success-surface" : "--color-danger-surface"})`,
+            border: `1px solid var(${feedback.type === "success" ? "--color-success" : "--color-danger"})`,
+            color: `var(${feedback.type === "success" ? "--color-success" : "--color-danger"})`,
             fontWeight: 600,
           }}
         >
@@ -429,8 +429,8 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       )}
 
       {pendingAreaDeletion && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "rgba(2, 6, 23, 0.76)" }}>
-          <section role="alertdialog" aria-modal="true" aria-labelledby="area-delete-title" aria-describedby="area-delete-description" className="glass-panel" style={{ width: "min(100%, 30rem)", padding: "1.75rem", border: "1px solid rgba(248, 113, 113, 0.45)", boxShadow: "0 24px 80px rgba(0, 0, 0, 0.5)" }}>
+        <div className="dialog-overlay" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "var(--color-overlay)" }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="area-delete-title" aria-describedby="area-delete-description" className="glass-panel confirmation-dialog" style={{ width: "min(100%, 30rem)", padding: "1.75rem", border: "1px solid var(--color-danger)", boxShadow: "var(--shadow-lg)" }}>
             <h3 id="area-delete-title" style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.75rem" }}>Eliminar área</h3>
             <p id="area-delete-description" style={{ color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "1.25rem" }}>
               ¿Eliminar <strong>{pendingAreaDeletion.name}</strong>? Se marcará como inactiva, conservará su historial y liberará sus plazas. Esta acción requiere que el área esté vacía.
@@ -446,7 +446,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       )}
 
       {/* Balance Summary Header Cards */}
-      <div className="dashboard-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+      <div className="dashboard-grid config-summary-grid">
         <div className="glass-panel metric-card" style={{ borderLeft: "4px solid var(--accent-primary)" }}>
           <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase" }}>
             Capacidad Total Recinto
@@ -459,11 +459,11 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           </span>
         </div>
 
-        <div className="glass-panel metric-card" style={{ borderLeft: "4px solid #8b5cf6" }}>
+        <div className="glass-panel metric-card" style={{ borderLeft: "4px solid var(--color-accent)" }}>
           <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase" }}>
             Plazas Sectorizadas (Áreas)
           </span>
-          <div className="metric-val" style={{ color: "#a78bfa" }}>
+          <div className="metric-val" style={{ color: "var(--color-accent)" }}>
             {allocatedSum}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
@@ -471,11 +471,11 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           </span>
         </div>
 
-        <div className="glass-panel metric-card" style={{ borderLeft: `4px solid ${floatingBuffer > 0 ? "#38bdf8" : "var(--color-warning)"}` }}>
+        <div className="glass-panel metric-card" style={{ borderLeft: `4px solid ${floatingBuffer > 0 ? "var(--color-info)" : "var(--color-warning)"}` }}>
           <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase" }}>
             Reserva Flotante Libre (Buffer)
           </span>
-          <div className="metric-val" style={{ color: floatingBuffer > 0 ? "#38bdf8" : "var(--color-warning)" }}>
+          <div className="metric-val" style={{ color: floatingBuffer > 0 ? "var(--color-info)" : "var(--color-warning)" }}>
             {floatingBuffer}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
@@ -485,7 +485,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       </div>
 
       {/* Section 1: Facility Construction & Base Parameters */}
-      <div className="glass-panel" style={{ padding: "2rem" }}>
+      <div className="glass-panel config-panel">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
           <div>
             <h3 style={{ fontSize: "1.3rem", fontWeight: 700 }}>
@@ -500,7 +500,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           </span>
         </div>
 
-        <form onSubmit={handleSaveFacility} style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 1fr auto", gap: "1rem", alignItems: "flex-end" }}>
+        <form onSubmit={handleSaveFacility} className="config-facility-fields">
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Nombre del Recinto / Complejo</label>
             <input
@@ -548,7 +548,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       </div>
 
       {/* Section 2: Parking Areas & Dynamic Quota Management (Feature 002 core) */}
-      <div className="glass-panel" style={{ padding: "2rem" }}>
+      <div className="glass-panel config-panel">
         <div style={{ marginBottom: "1.5rem" }}>
           <h3 style={{ fontSize: "1.3rem", fontWeight: 700 }}>
             2. Gestión de Áreas y Asignación Dinámica de Capacidad
@@ -559,21 +559,13 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
         </div>
 
         {/* Create New Area Form */}
-        <div
-          style={{
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "10px",
-            padding: "1.5rem",
-            marginBottom: "2rem",
-          }}
-        >
+        <div className="config-create-panel">
           <h4 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text-primary)" }}>
             ➕ Crear Nueva Área de Estacionamiento
           </h4>
 
           <form onSubmit={handleCreateArea}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1.5fr", gap: "1rem" }}>
+            <div className="config-area-fields">
               <div className="form-group">
                 <label className="form-label">Nombre del Área</label>
                 <input
@@ -631,7 +623,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", marginTop: "0.5rem" }}>
+            <div className="config-area-description-row">
               <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                 <label className="form-label">Descripción o Referencias Físicas</label>
                 <input
@@ -669,7 +661,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             No hay áreas operativas. Crea una arriba utilizando el buffer disponible.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div className="config-area-list">
             {activeAreas.map((area) => (
               <ManagedAreaCard
                 key={area.id}
@@ -693,13 +685,13 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               {inactiveAreas.map((area) => (
-                <div key={area.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", padding: "1rem 1.25rem", background: "rgba(0, 0, 0, 0.18)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "10px", opacity: 0.8 }}>
+                <div key={area.id} className="config-inactive-row" style={{ opacity: 0.8 }}>
                   <div>
                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)", marginRight: "0.75rem" }}>{area.code}</span>
                     <strong>{area.name}</strong>
                     <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>{area.description || "Sin descripción física"} · {area.allocatedCapacity} plazas</div>
                   </div>
-                  <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem", borderRadius: "999px", background: "rgba(148, 163, 184, 0.15)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>Inactiva</span>
+                  <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem", borderRadius: "999px", background: "var(--color-surface-sunken)", color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>Inactiva</span>
                 </div>
               ))}
             </div>
@@ -708,7 +700,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       </div>
 
       {/* Section 3: Business Units and Active Events */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
+      <div className="config-business-sections">
         {facility && <BusinessUnitManager facilityId={facility.id} onRefresh={onRefresh} />}
 
         {facility && (

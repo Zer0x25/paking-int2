@@ -7,10 +7,16 @@ import type { SyncMutation } from "@core/types/schema";
 export interface SyncResult {
   processed: number;
   succeeded: string[];
-  conflicts: any[];
+  conflicts: Array<{ mutationId: string; reason: string }>;
 }
 
-export type ApiPoster = (endpoint: string, body: any) => Promise<SyncResult>;
+export interface SyncDeltaPayload {
+  facilityId: string;
+  deviceId: string;
+  mutations: SyncMutation[];
+}
+
+export type ApiPoster = (endpoint: string, body: SyncDeltaPayload) => Promise<SyncResult>;
 
 export function orderMutationsByTimestamp(mutations: SyncMutation[]): SyncMutation[] {
   return [...mutations].sort((a, b) => a.clientTimestamp.localeCompare(b.clientTimestamp));

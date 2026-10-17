@@ -32,7 +32,7 @@ export interface ParkingDB extends DBSchema {
     key: string;
     value: {
       key: string;
-      data: any;
+      data: unknown;
       updatedAt: string;
     };
   };
@@ -161,7 +161,7 @@ export async function markOutboxMutationSynced(id: string): Promise<void> {
 }
 
 // Catalog helper methods
-export async function cacheCatalogData(key: string, data: any): Promise<void> {
+export async function cacheCatalogData(key: string, data: unknown): Promise<void> {
   const db = await getDB();
   await db.put("catalogs_cache", {
     key,

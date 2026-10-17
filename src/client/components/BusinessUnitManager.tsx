@@ -220,20 +220,20 @@ export const BusinessUnitManager: React.FC<BusinessUnitManagerProps> = ({ facili
   const inactiveUnits = units.filter((unit) => !unit.isActive);
   const cardStyle: React.CSSProperties = {
     padding: "1rem 1.1rem",
-    background: "rgba(0, 0, 0, 0.2)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
+    background: "var(--color-surface-raised)",
+    border: "1px solid var(--color-border)",
     borderRadius: "10px",
   };
 
   return (
-    <div className="glass-panel" style={{ padding: "2rem" }}>
+    <div className="glass-panel business-unit-manager config-panel" style={{ padding: "2rem" }}>
       <h3 style={{ fontSize: "1.2rem", fontWeight: 700, margin: "0 0 0.4rem" }}>3. Unidades de Negocio</h3>
       <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: "0 0 1.2rem" }}>
         Crea destinos y mantén sus cupos desde aquí.
       </p>
 
       {feedback && (
-        <p role={feedback.type === "error" ? "alert" : "status"} style={{ color: feedback.type === "error" ? "#fca5a5" : "#6ee7b7", margin: "0 0 1rem" }}>
+        <p role={feedback.type === "error" ? "alert" : "status"} style={{ color: feedback.type === "error" ? "var(--color-danger)" : "var(--color-success)", margin: "0 0 1rem" }}>
           {feedback.text}
         </p>
       )}
@@ -273,7 +273,7 @@ export const BusinessUnitManager: React.FC<BusinessUnitManagerProps> = ({ facili
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", flexWrap: "wrap" }}>
-                      <span style={{ fontFamily: "var(--font-mono)", color: "#c4b5fd", fontSize: "0.8rem" }}>{unit.code}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--color-accent)", fontSize: "0.8rem" }}>{unit.code}</span>
                       <strong>{unit.name}</strong>
                     </div>
                     <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.3rem" }}>
@@ -310,8 +310,8 @@ export const BusinessUnitManager: React.FC<BusinessUnitManagerProps> = ({ facili
       )}
 
       {pendingDeletion && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "rgba(2, 6, 23, 0.76)" }}>
-          <section role="alertdialog" aria-modal="true" aria-labelledby="business-unit-delete-title" aria-describedby="business-unit-delete-description" className="glass-panel" style={{ width: "min(100%, 30rem)", padding: "1.75rem", border: "1px solid rgba(248, 113, 113, 0.45)", boxShadow: "0 24px 80px rgba(0, 0, 0, 0.5)" }}>
+        <div className="dialog-overlay" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "var(--color-overlay)" }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="business-unit-delete-title" aria-describedby="business-unit-delete-description" className="glass-panel confirmation-dialog" style={{ width: "min(100%, 30rem)", padding: "1.75rem", border: "1px solid var(--color-danger)", boxShadow: "var(--shadow-lg)" }}>
             <h3 id="business-unit-delete-title" style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.75rem" }}>Eliminar unidad de negocio</h3>
             <p id="business-unit-delete-description" style={{ color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "1.25rem" }}>
               ¿Retirar <strong>{pendingDeletion.name}</strong>? Se ocultará de la operación diaria y conservará sus referencias históricas. No se podrá retirar mientras tenga sesiones, áreas exclusivas o reservas vigentes.

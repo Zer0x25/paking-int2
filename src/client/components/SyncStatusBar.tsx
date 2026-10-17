@@ -65,7 +65,7 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
   }, [facilityId, pendingCount]);
 
   return (
-    <div className={`sync-banner ${isOnline ? "sync-online" : "sync-offline"}`}>
+    <div className={`sync-banner ${isOnline ? "sync-online" : "sync-offline"}`} role="status" aria-live="polite">
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span>{isOnline ? "● Conectado (Online)" : "▲ Sin conexión de red (Modo Offline)"}</span>
         {pendingCount > 0 && (

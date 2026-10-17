@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import app from "@server/index";
 import { mockSessionsRepo } from "@server/routes/parking";
 

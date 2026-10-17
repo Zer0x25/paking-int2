@@ -170,7 +170,7 @@ export const EventBookingsManager: React.FC<EventBookingsManagerProps> = ({
   };
 
   return (
-    <div className="glass-panel" style={{ padding: "2rem" }}>
+    <div className="glass-panel event-bookings-manager config-panel" style={{ padding: "2rem" }}>
       <h3 style={{ fontSize: "1.2rem", fontWeight: 700, margin: "0 0 0.45rem" }}>
         4. Eventos y Reservas Contractuales
       </h3>
@@ -178,8 +178,8 @@ export const EventBookingsManager: React.FC<EventBookingsManagerProps> = ({
         Programa reservas con anticipación y define sus cupos y horario, incluso si terminan al día siguiente.
       </p>
 
-      {error && <p role="alert" style={{ color: "#fca5a5", margin: "0 0 1rem" }}>{error}</p>}
-      {notice && <p role="status" style={{ color: "#6ee7b7", margin: "0 0 1rem" }}>{notice}</p>}
+      {error && <p role="alert" style={{ color: "var(--color-danger)", margin: "0 0 1rem" }}>{error}</p>}
+      {notice && <p role="status" style={{ color: "var(--color-success)", margin: "0 0 1rem" }}>{notice}</p>}
 
       <form
         onSubmit={submit}
@@ -190,7 +190,8 @@ export const EventBookingsManager: React.FC<EventBookingsManagerProps> = ({
           padding: "1.25rem",
           marginBottom: "1.25rem",
           borderRadius: "10px",
-          background: "rgba(0, 0, 0, 0.18)",
+          background: "var(--color-surface-sunken)",
+          border: "1px solid var(--color-border)",
         }}
       >
         <div className="form-group" style={{ ...fieldStyle, gridColumn: "1 / -1" }}>
@@ -275,9 +276,9 @@ export const EventBookingsManager: React.FC<EventBookingsManagerProps> = ({
             key={event.id}
             style={{
               padding: "0.9rem 1rem",
-              background: "rgba(0, 0, 0, 0.2)",
+              background: "var(--color-surface-raised)",
               borderRadius: "8px",
-              borderLeft: "3px solid #8b5cf6",
+              borderLeft: "3px solid var(--color-accent)",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
@@ -306,10 +307,11 @@ export const EventBookingsManager: React.FC<EventBookingsManagerProps> = ({
       {confirmingCancellation && (
         <div
           role="presentation"
-          style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "rgba(3, 7, 18, 0.78)" }}
+          className="dialog-overlay"
+          style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "var(--color-overlay)" }}
           onMouseDown={(event) => { if (event.target === event.currentTarget && !cancelling) setConfirmingCancellation(null); }}
         >
-          <div role="alertdialog" aria-modal="true" aria-labelledby="cancel-event-title" aria-describedby="cancel-event-description" style={{ width: "min(100%, 28rem)", padding: "1.5rem", borderRadius: "12px", background: "#111827", border: "1px solid rgba(255,255,255,0.12)" }}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="cancel-event-title" aria-describedby="cancel-event-description" className="glass-panel confirmation-dialog" style={{ width: "min(100%, 28rem)", padding: "1.5rem", borderRadius: "12px" }}>
             <h4 id="cancel-event-title" style={{ marginTop: 0 }}>Eliminar reserva</h4>
             <p id="cancel-event-description">¿Cancelar “{confirmingCancellation.title}”? La reserva dejará de ocupar cupos y se conservará en el historial.</p>
             <div style={actionsStyle}>

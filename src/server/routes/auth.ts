@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { signJwt } from "../middleware/auth";
 import type { UserRole } from "@core/types/schema";
+import type { AppEnvironment } from "../types/app-environment";
 
-export const authRoutes = new Hono<{ Bindings: any }>();
+export const authRoutes = new Hono<AppEnvironment>();
 
 export interface SeedUser {
   id: string;
@@ -58,7 +59,7 @@ authRoutes.post("/login", async (c) => {
     return c.json({ error: "Usuario o contraseña incorrectos" }, 401);
   }
 
-  const secret = (c.env as any)?.JWT_SECRET || "supersecret_jwt_key_local_development";
+  const secret = c.env?.JWT_SECRET || "supersecret_jwt_key_local_development";
   const token = await signJwt(
     {
       userId: user.id,

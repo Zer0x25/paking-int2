@@ -6,14 +6,9 @@ import { parkingRoutes } from "./routes/parking";
 import { dashboardRoutes } from "./routes/dashboard";
 import { facilityRoutes } from "./routes/facilities";
 import { syncRoutes } from "./routes/sync";
+import type { AppEnvironment } from "./types/app-environment";
 
-export interface Env {
-  PARKING_DB: any;
-  JWT_SECRET?: string;
-  ENVIRONMENT?: string;
-}
-
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppEnvironment>();
 
 // Global Middlewares
 app.use("*", logger());

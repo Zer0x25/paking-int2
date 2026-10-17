@@ -3,10 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090d16" />
+    <meta name="theme-color" content="#0b1020" />
     <meta name="description" content="Sistema Inteligente de Gestión y Asignación Dinámica de Estacionamientos - PWA Offline-First" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Smart Parking - Gestión Inteligente de Estacionamientos</title>
+    <script>
+      (() => {
+        const key = "smart-parking-theme";
+        try {
+          const preference = localStorage.getItem(key);
+          const valid = preference === "light" || preference === "dark" || preference === "system";
+          const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const theme = valid && preference !== "system" ? preference : systemDark ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+          const meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.content = theme === "dark" ? "#0b1020" : "#f5f7fb";
+        } catch {
+          const theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

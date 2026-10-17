@@ -11,3 +11,7 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | [ADR-003](ADR-003-parking-area-lifecycle.md) | Edición y baja lógica de áreas de estacionamiento | Aceptado | 2026-10-17 |
 | [ADR-004](ADR-004-event-booking-lifecycle.md) | Ciclo de vida de reservas contractuales de eventos | Aceptado | 2026-10-17 |
 | [ADR-005](ADR-005-business-unit-lifecycle.md) | Ciclo de vida de unidades de negocio | Aceptado | 2026-10-17 |
+| [ADR-006](ADR-006-gate-session-actions-and-plate-format.md) | Operaciones de sesión de Garita y formato de patente | Aceptado | 2026-10-17 |
+| [ADR-007](ADR-007-workers-runtime-test-runner.md) | Ejecución de pruebas de rutas sobre el runtime Workers | Aceptado | 2026-10-17 |
+| [ADR-008](ADR-008-responsive-design-system-and-theme.md) | Sistema visual adaptable y preferencia local de tema | Aceptado | 2026-10-17 |
+| [ADR-009](ADR-009-eslint-tooling.md) | ESLint como gate de calidad local | Aceptado | 2026-10-17 |

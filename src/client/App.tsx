@@ -4,6 +4,7 @@ import { VehicleGatePanel } from "./components/VehicleGatePanel";
 import { OperationalDashboard } from "./components/OperationalDashboard";
 import { FacilityConfigView } from "./components/FacilityConfigView";
 import { LoginView } from "./components/LoginView";
+import { ThemeSelector } from "./components/ThemeSelector";
 import { getOperationalViewSections, type ApplicationTab } from "./utils/operational-view";
 import type { Facility, BusinessUnit, SpaceCategory, EventBooking, DashboardMetrics, User, ParkingArea } from "@core/types/schema";
 import { defaultFacility, defaultBusinessUnits, defaultEvents } from "@server/services/allocation-service";
@@ -88,28 +89,19 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div className="app-shell" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {/* App Header */}
       <header className="app-header">
-        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+        <div className="app-brand">
           <h1 className="brand-title">Smart Parking</h1>
-          <span
-            style={{
-              fontSize: "0.8rem",
-              background: "rgba(255, 255, 255, 0.08)",
-              padding: "0.25rem 0.65rem",
-              borderRadius: "999px",
-              color: "var(--text-secondary)",
-            }}
-          >
-            {facility.name}
-          </span>
+          <span className="app-facility-label" title={facility.name}>{facility.name}</span>
         </div>
 
-        <nav className="nav-tabs">
+        <nav className="nav-tabs" aria-label="Navegación principal">
           <button
             onClick={() => setActiveTab("garita")}
             className={`nav-tab-btn ${activeTab === "garita" ? "active" : ""}`}
+            aria-current={activeTab === "garita" ? "page" : undefined}
           >
             🚗 Garita Operativa
           </button>
@@ -119,6 +111,7 @@ export const App: React.FC = () => {
               fetchDashboard();
             }}
             className={`nav-tab-btn ${activeTab === "dashboard" ? "active" : ""}`}
+            aria-current={activeTab === "dashboard" ? "page" : undefined}
           >
             📊 Dashboard
           </button>
@@ -126,26 +119,24 @@ export const App: React.FC = () => {
             <button
               onClick={() => setActiveTab("config")}
               className={`nav-tab-btn ${activeTab === "config" ? "active" : ""}`}
+              aria-current={activeTab === "config" ? "page" : undefined}
             >
               ⚙ Configuración
             </button>
           )}
         </nav>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>{currentUser.fullName}</div>
-            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "capitalize" }}>
+        <div className="app-header-actions">
+          <div className="app-account">
+            <div className="app-user-info">
+              <div className="app-user-name">{currentUser.fullName}</div>
+              <div className="app-role-label">
               Rol: {currentUser.role}
+              </div>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="btn btn-secondary"
-            style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
-          >
-            Salir
-          </button>
+          <ThemeSelector />
+          <button onClick={handleLogout} className="btn btn-secondary">Salir</button>
         </div>
       </header>
 

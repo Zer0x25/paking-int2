@@ -9,8 +9,9 @@ import {
 } from "@core/models/parking-session";
 import { LicensePlateInputSchema, type ParkingSession } from "@core/types/schema";
 import { checkAllocationAvailability } from "../services/allocation-service";
+import type { AppEnvironment } from "../types/app-environment";
 
-export const parkingRoutes = new Hono<{ Bindings: any }>();
+export const parkingRoutes = new Hono<AppEnvironment>();
 
 // In-memory fallback repository for dev/test when D1 binding is not passed
 export const mockSessionsRepo: ParkingSession[] = [];
@@ -58,10 +59,10 @@ const PlateCorrectionRequestSchema = z.object({
 }).strict();
 
 function recordSessionAudit(
-  c: Context,
+  c: Context<AppEnvironment>,
   entry: Omit<ParkingSessionAuditEntry, "userId" | "createdAt">
 ) {
-  const user = (c.get as any)("user") as { userId?: string } | undefined;
+  const user = c.get("user");
   parkingSessionAuditStore.push({
     ...entry,
     userId: user?.userId || "unknown-operator",
@@ -118,7 +119,7 @@ parkingRoutes.post("/entry", async (c) => {
     parkingAreaId: data.parkingAreaId,
     licensePlate: normPlate,
     entryTime: data.entryTime,
-    operatorUserId: (c.get as any)("user")?.userId || "op-local",
+    operatorUserId: c.get("user").userId || "op-local",
     deviceId: data.deviceId || "gate-default",
   });
 

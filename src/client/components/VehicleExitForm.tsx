@@ -11,6 +11,13 @@ interface VehicleExitFormProps {
   onExitSuccess?: () => void;
 }
 
+interface ExitReceipt {
+  plate: string;
+  durationMinutes: number | null;
+  exitTime: string;
+  offline?: boolean;
+}
+
 export const VehicleExitForm: React.FC<VehicleExitFormProps> = ({
   facilityId,
   onExitSuccess,
@@ -18,7 +25,7 @@ export const VehicleExitForm: React.FC<VehicleExitFormProps> = ({
   const [plate, setPlate] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
-  const [receipt, setReceipt] = useState<any>(null);
+  const [receipt, setReceipt] = useState<ExitReceipt | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,9 +162,9 @@ export const VehicleExitForm: React.FC<VehicleExitFormProps> = ({
             marginTop: "1.25rem",
             padding: "0.85rem",
             borderRadius: "8px",
-            backgroundColor: message.type === "success" ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
-            border: `1px solid ${message.type === "success" ? "#10b981" : "#ef4444"}`,
-            color: message.type === "success" ? "#34d399" : "#f87171",
+            backgroundColor: `var(${message.type === "success" ? "--color-success-surface" : "--color-danger-surface"})`,
+            border: `1px solid var(${message.type === "success" ? "--color-success" : "--color-danger"})`,
+            color: `var(${message.type === "success" ? "--color-success" : "--color-danger"})`,
             fontWeight: 500,
           }}
         >

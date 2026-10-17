@@ -11,6 +11,15 @@ interface VehicleEntryFormProps {
   onEntrySuccess?: () => void;
 }
 
+interface EntryTicket {
+  ticketNumber: string;
+  plate: string;
+  entryTime: string;
+  unitName: string;
+  areaName: string;
+  offline?: boolean;
+}
+
 export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
   facilityId,
   businessUnits,
@@ -24,7 +33,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
   const [selectedArea, setSelectedArea] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
-  const [lastTicket, setLastTicket] = useState<any>(null);
+  const [lastTicket, setLastTicket] = useState<EntryTicket | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,9 +252,9 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
             marginTop: "1.25rem",
             padding: "0.85rem",
             borderRadius: "8px",
-            backgroundColor: message.type === "success" ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
-            border: `1px solid ${message.type === "success" ? "#10b981" : "#ef4444"}`,
-            color: message.type === "success" ? "#34d399" : "#f87171",
+            backgroundColor: `var(${message.type === "success" ? "--color-success-surface" : "--color-danger-surface"})`,
+            border: `1px solid var(${message.type === "success" ? "--color-success" : "--color-danger"})`,
+            color: `var(${message.type === "success" ? "--color-success" : "--color-danger"})`,
             fontWeight: 500,
           }}
         >
@@ -270,7 +279,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
           <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
             Ticket: {lastTicket.ticketNumber} | Destino: {lastTicket.unitName}
           </div>
-          <div style={{ fontSize: "0.85rem", color: "#38bdf8", fontWeight: 600, marginTop: "0.2rem" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--color-info)", fontWeight: 600, marginTop: "0.2rem" }}>
             Sector Asignado: {lastTicket.areaName}
           </div>
           <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
