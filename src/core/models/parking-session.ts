@@ -1,4 +1,5 @@
 import { LicensePlateInputSchema, ParkingSessionSchema, type ParkingSession } from "../types/schema";
+import { createUuid } from "../utils/uuid";
 
 export interface CreateSessionInput {
   id?: string;
@@ -102,7 +103,7 @@ export function updateActiveParkingSessionPlate({
 export function createParkingSession(input: CreateSessionInput): ParkingSession {
   const normPlate = normalizeLicensePlate(input.licensePlate);
   const now = input.entryTime || new Date().toISOString();
-  const id = input.id || crypto.randomUUID();
+  const id = input.id || createUuid();
 
   const rawSession: ParkingSession = {
     id,

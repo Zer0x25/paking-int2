@@ -16,3 +16,6 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | [ADR-008](ADR-008-responsive-design-system-and-theme.md) | Sistema visual adaptable y preferencia local de tema | Aceptado | 2026-10-17 |
 | [ADR-009](ADR-009-eslint-tooling.md) | ESLint como gate de calidad local | Aceptado | 2026-10-17 |
 | [ADR-010](ADR-010-drizzle-security-remediation.md) | Remediación de dependencias vulnerables de Drizzle | Aceptado | 2026-10-17 |
+| [ADR-011](ADR-011-compact-header-controls.md) | Botón único de tema e indicador compacto de sincronización | Aceptado | 2026-10-17 |
+| [ADR-012](ADR-012-guided-gate-entry.md) | Flujo guiado de operación de garita | Aceptado | 2026-10-17 |
+| [ADR-013](ADR-013-secure-uuid-fallback.md) | Respaldo seguro para generar UUID en navegador | Aceptado | 2026-10-17 |

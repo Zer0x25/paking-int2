@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { BusinessUnit, SpaceCategory, ParkingArea } from "@core/types/schema";
 import { normalizeLicensePlate, createParkingSession } from "@core/models/parking-session";
+import { createUuid } from "@core/utils/uuid";
 import { saveLocalSession, enqueueOutboxMutation } from "../db/indexed-db";
 
 interface VehicleEntryFormProps {
@@ -50,7 +51,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
     const targetCategory = selectedCategory || spaceCategories[0]?.id;
     const targetArea = selectedArea || null;
     const now = new Date().toISOString();
-    const sessionId = crypto.randomUUID();
+    const sessionId = createUuid();
 
     const payload = {
       id: sessionId,

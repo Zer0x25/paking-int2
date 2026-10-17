@@ -4,6 +4,7 @@ import type {
   ParkingAreaMetrics,
   CreateParkingAreaInput,
 } from "../types/schema";
+import { createUuid } from "../utils/uuid";
 
 /**
  * Calcula la reserva flotante (buffer general) de plazas no asignadas a un área específica.
@@ -71,7 +72,7 @@ export function createParkingArea(
 
   const now = new Date().toISOString();
   return {
-    id: crypto.randomUUID(),
+    id: createUuid(),
     facilityId: input.facilityId,
     name: input.name.trim(),
     code: normCode,

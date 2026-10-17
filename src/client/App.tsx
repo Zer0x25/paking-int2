@@ -135,22 +135,22 @@ export const App: React.FC = () => {
               </div>
             </div>
           </div>
-          <ThemeSelector />
+          <div className="app-header-quick-controls">
+            <ThemeSelector />
+            <SyncStatusBar
+              facilityId={facility.id}
+              onSyncCompleted={() => {
+                fetchDashboard();
+                setGateRefreshKey((current) => current + 1);
+              }}
+            />
+          </div>
           <button onClick={handleLogout} className="btn btn-secondary">Salir</button>
         </div>
       </header>
 
       {/* Main Content Area */}
       <main className="main-content" style={{ flex: 1 }}>
-        {/* Sync Status Banner */}
-        <SyncStatusBar
-          facilityId={facility.id}
-          onSyncCompleted={() => {
-            fetchDashboard();
-            setGateRefreshKey((current) => current + 1);
-          }}
-        />
-
         {/* Tab Views */}
         {visibleSections.includes("vehicle-entry") && visibleSections.includes("vehicle-exit") && (
           <section>

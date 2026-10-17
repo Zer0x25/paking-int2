@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { normalizeLicensePlate, completeParkingSession } from "@core/models/parking-session";
+import { createUuid } from "@core/utils/uuid";
 import {
   getLocalSessionByPlate,
   saveLocalSession,
@@ -98,7 +99,7 @@ export const VehicleExitForm: React.FC<VehicleExitFormProps> = ({
     await saveLocalSession(updated);
 
     await enqueueOutboxMutation({
-      id: crypto.randomUUID(),
+      id: createUuid(),
       type: "VEHICLE_EXIT",
       payload: {
         facilityId,

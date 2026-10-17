@@ -18,8 +18,9 @@ import {
   saveLocalSession,
 } from "../db/indexed-db";
 import { findStaleActiveSessionIds, getLocalEntryValidationError, mergeActiveParkingSessions } from "../utils/gate-operations";
+import { createUuid } from "@core/utils/uuid";
 
-type OperationMode = "entry" | "exit";
+type GateStep = "plate" | "movement" | "entry-details";
 
 interface VehicleGatePanelProps {
   facilityId: string;
@@ -42,7 +43,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
   refreshKey = 0,
   onOperationSuccess,
 }) => {
-  const [mode, setMode] = useState<OperationMode>("entry");
+  const [step, setStep] = useState<GateStep>("plate");
   const [plate, setPlate] = useState("");
   const [selectedUnit, setSelectedUnit] = useState(businessUnits[0]?.id || "");
   const [selectedCategory, setSelectedCategory] = useState(spaceCategories[0]?.id || "");
@@ -156,7 +157,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     setMessage(null);
     setLastTicket(null);
     try {
-    const sessionId = crypto.randomUUID();
+    const sessionId = createUuid();
     const now = new Date().toISOString();
     const cleanPlate = normalizeLicensePlate(plate);
     const payload = {
@@ -253,6 +254,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     }
 
     setPlate("");
+    setStep("plate");
     await completeOperation("Entrada registrada correctamente.");
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : "No se pudo registrar la entrada", type: "error" });
@@ -261,8 +263,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     }
   };
 
-  const handleManualExit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleManualExit = async () => {
     if (!validatePlate(plate)) return;
 
     setLoading(true);
@@ -293,6 +294,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     }
 
     setPlate("");
+    setStep("plate");
     await completeOperation("Salida registrada correctamente.");
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : "No se pudo registrar la salida", type: "error" });
@@ -309,7 +311,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     const updated = completeParkingSession(currentSession, now);
     await saveLocalSession(updated);
     await queueOfflineMutation({
-      id: crypto.randomUUID(),
+      id: createUuid(),
       type: "VEHICLE_EXIT",
       payload: {
         facilityId,
@@ -427,7 +429,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     await saveLocalSession(updated);
     const now = new Date().toISOString();
     await queueOfflineMutation({
-      id: crypto.randomUUID(),
+      id: createUuid(),
       type: "VEHICLE_PLATE_UPDATE",
       payload: { facilityId, sessionId: session.id, licensePlate: cleanPlate, expectedVersion: session.version, operatorUserId },
       clientTimestamp: now,
@@ -437,7 +439,34 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     });
   };
 
-  const handleSubmit = (event: React.FormEvent) => mode === "entry" ? handleEntry(event) : handleManualExit(event);
+  const handlePlateSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!validatePlate(plate)) return;
+    setMessage(null);
+    setLastTicket(null);
+    setPlate(normalizeLicensePlate(plate));
+    setStep("movement");
+  };
+
+  const handleMovementSelection = (movement: "entry" | "exit") => {
+    setMessage(null);
+    setLastTicket(null);
+    if (movement === "entry") {
+      setStep("entry-details");
+      return;
+    }
+    void handleManualExit();
+  };
+
+  const returnToPlate = () => {
+    setMessage(null);
+    setStep("plate");
+  };
+
+  const returnToMovement = () => {
+    setMessage(null);
+    setStep("movement");
+  };
 
   return (
     <div className="gate-workspace">
@@ -446,19 +475,14 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
           <div>
             <span className="gate-eyebrow">OPERACIÓN DE GARITA</span>
             <h2 id="gate-operation-title">Registro de vehículos</h2>
-            <p>Seleccione el movimiento que desea registrar.</p>
+            <p>{step === "plate" ? "Ingresa la patente para comenzar." : step === "movement" ? "Selecciona el movimiento del vehículo." : "Revisa los datos antes de confirmar la entrada."}</p>
           </div>
-          <div className="gate-mode-switch" role="group" aria-label="Tipo de operación">
-            <button type="button" aria-pressed={mode === "entry"} className={mode === "entry" ? "active" : ""} onClick={() => { setMode("entry"); setMessage(null); setLastTicket(null); }}>
-              <span aria-hidden="true">↙</span> Entrada
-            </button>
-            <button type="button" aria-pressed={mode === "exit"} className={mode === "exit" ? "active" : ""} onClick={() => { setMode("exit"); setMessage(null); setLastTicket(null); }}>
-              <span aria-hidden="true">↗</span> Salida
-            </button>
-          </div>
+          <span className="gate-step-indicator" role="status" aria-live="polite">
+            {step === "plate" ? "Paso 1 de 3 · Patente" : step === "movement" ? "Paso 2 de 3 · Movimiento" : "Paso 3 de 3 · Confirmación"}
+          </span>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate>
+        {step === "plate" && <form onSubmit={handlePlateSubmit} noValidate>
           <div className="form-group">
             <label className="form-label" htmlFor="gate-license-plate">Patente</label>
             <input
@@ -479,34 +503,60 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
             <span id="gate-plate-hint" className="gate-input-hint">Seis letras o números · se agrupa automáticamente como XX-XX-XX</span>
           </div>
 
-          {mode === "entry" && (
-            <div className="gate-entry-fields">
-              <div className="form-group">
-                <label className="form-label" htmlFor="gate-business-unit">Unidad / destino</label>
-                <select id="gate-business-unit" className="form-select" value={selectedUnit} onChange={(event) => setSelectedUnit(event.target.value)} required>
-                  {businessUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="gate-space-category">Tipo de espacio</label>
-                <select id="gate-space-category" className="form-select" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} required>
-                  {spaceCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-              </div>
-              <div className="form-group gate-area-field">
-                <label className="form-label" htmlFor="gate-parking-area">Área / sector</label>
-                <select id="gate-parking-area" className="form-select" value={selectedArea} onChange={(event) => setSelectedArea(event.target.value)}>
-                  <option value="">Asignación automática / flotante</option>
-                  {areas.map((area) => <option key={area.id} value={area.id}>[{area.code}] {area.name} · {area.allocatedCapacity} plazas</option>)}
-                </select>
-              </div>
-            </div>
-          )}
+          <button type="submit" className="btn btn-primary gate-submit" disabled={loading}>Registrar</button>
+        </form>}
 
-          <button type="submit" className={`btn ${mode === "entry" ? "btn-primary" : "btn-danger"} gate-submit`} disabled={loading}>
-            {loading ? "Procesando…" : mode === "entry" ? "Registrar entrada" : "Registrar salida"}
-          </button>
-        </form>
+        {step === "movement" && <div className="gate-step-content">
+          <div className="gate-plate-summary">
+            <span>Patente</span>
+            <strong>{formatLicensePlate(plate)}</strong>
+          </div>
+          <div className="gate-movement-actions" role="group" aria-label="Elige el movimiento">
+            <button type="button" className="btn btn-primary" onClick={() => handleMovementSelection("entry")} disabled={loading}>
+              <span aria-hidden="true">↙</span> Entrada
+            </button>
+            <button type="button" className="btn btn-danger" onClick={() => handleMovementSelection("exit")} disabled={loading}>
+              <span aria-hidden="true">↗</span> {loading ? "Procesando…" : "Salida"}
+            </button>
+          </div>
+          <button type="button" className="btn btn-secondary gate-back-action" onClick={returnToPlate} disabled={loading}>Volver a corregir patente</button>
+        </div>}
+
+        {step === "entry-details" && <form onSubmit={handleEntry} noValidate>
+          <div className="gate-plate-summary">
+            <span>Patente a ingresar</span>
+            <strong>{formatLicensePlate(plate)}</strong>
+          </div>
+
+          <div className="gate-entry-fields">
+            <div className="form-group">
+              <label className="form-label" htmlFor="gate-business-unit">Unidad / destino</label>
+              <select id="gate-business-unit" className="form-select" value={selectedUnit} onChange={(event) => setSelectedUnit(event.target.value)} required>
+                {businessUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="gate-space-category">Tipo de espacio</label>
+              <select id="gate-space-category" className="form-select" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} required>
+                {spaceCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group gate-area-field">
+              <label className="form-label" htmlFor="gate-parking-area">Área / sector</label>
+              <select id="gate-parking-area" className="form-select" value={selectedArea} onChange={(event) => setSelectedArea(event.target.value)}>
+                <option value="">Asignación automática / flotante</option>
+                {areas.map((area) => <option key={area.id} value={area.id}>[{area.code}] {area.name} · {area.allocatedCapacity} plazas</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="gate-step-actions">
+            <button type="button" className="btn btn-secondary" onClick={returnToMovement} disabled={loading}>Volver</button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? "Procesando…" : "Confirmar entrada"}
+            </button>
+          </div>
+        </form>}
 
         {message && <div className={`gate-message ${message.type}`} role={message.type === "error" ? "alert" : "status"}>{message.text}</div>}
         {lastTicket && <div className="gate-ticket" role="status">

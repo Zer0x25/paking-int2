@@ -88,10 +88,42 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
 }
 .glass-panel:hover { border-color: var(--color-border-strong); }
 
-.sync-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; margin-bottom: 1.25rem; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: var(--font-size-sm); font-weight: 600; }
-.sync-banner > div { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .sync-online { background: var(--color-success-surface); color: var(--color-success); }
 .sync-offline { background: var(--color-warning-surface); color: var(--color-warning); }
+.sync-indicator { display: inline-flex; align-items: center; justify-content: center; }
+.sync-indicator-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0.55rem;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-md);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.sync-indicator-button svg { width: 1.25rem; height: 1.25rem; }
+.sync-indicator-button:disabled { cursor: default; opacity: 1; }
+.sync-indicator-button:not(:disabled):hover { filter: brightness(1.08); }
+.sync-indicator-button.is-syncing { border-color: var(--color-info); background: color-mix(in srgb, var(--color-info) 14%, var(--color-surface)); color: var(--color-info); }
+.sync-pending-badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.2rem;
+  border: 2px solid var(--color-surface);
+  border-radius: var(--radius-pill);
+  background: var(--color-danger-strong);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+}
 
 .form-group { min-width: 0; margin-bottom: 1.25rem; }
 .form-label { display: block; margin-bottom: 0.5rem; color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 600; }
@@ -108,7 +140,7 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
 }
 .form-input::placeholder { color: var(--color-text-muted); opacity: 1; }
 .form-input:focus, .form-select:focus { border-color: var(--color-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-focus) 28%, transparent); }
-.form-select option, .theme-selector option { background: var(--color-surface); color: var(--color-text); }
+.form-select option { background: var(--color-surface); color: var(--color-text); }
 .plate-input { font: 700 1.5rem var(--font-mono); letter-spacing: 0.12em; text-align: center; text-transform: uppercase; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 44px; padding: 0.65rem 1.25rem; border: 1px solid transparent; border-radius: var(--radius-sm); font-weight: 600; text-align: center; transition: filter 0.2s ease, background-color 0.2s ease; }
@@ -124,10 +156,16 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
 .gate-operation-header h2, .gate-active-header h2 { margin: 0; font-size: 1.3rem; line-height: 1.25; }
 .gate-operation-header p { margin: 0.25rem 0 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .gate-eyebrow { display: block; margin-bottom: 0.25rem; color: var(--color-accent); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em; }
-.gate-mode-switch { display: grid; flex: 0 0 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; padding: 0.25rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-sunken); }
-.gate-mode-switch button { min-width: 0; min-height: 44px; padding: 0.55rem 0.8rem; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 600; }
-.gate-mode-switch button:hover { background: var(--color-surface-raised); color: var(--color-text); }
-.gate-mode-switch button.active { border-color: var(--color-accent-strong); background: var(--color-accent-strong); color: var(--color-on-accent); }
+.gate-step-indicator { flex: 0 0 auto; padding: 0.45rem 0.7rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface-raised); color: var(--color-accent); font-size: var(--font-size-xs); font-weight: 700; white-space: nowrap; }
+.gate-step-content { display: grid; gap: 0.85rem; }
+.gate-plate-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.8rem 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-raised); }
+.gate-plate-summary span { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.gate-plate-summary strong { color: var(--color-text); font: 700 1.15rem var(--font-mono); letter-spacing: 0.08em; }
+.gate-movement-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.gate-movement-actions .btn { min-height: 3.25rem; }
+.gate-back-action { width: 100%; }
+.gate-step-actions { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 0.65rem; margin-top: 0.5rem; }
+.gate-step-actions .btn { width: 100%; }
 .gate-input-hint { display: block; margin-top: 0.35rem; color: var(--color-text-muted); font-size: var(--font-size-xs); }
 .gate-entry-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1rem; }
 .gate-area-field { grid-column: 1 / -1; }
@@ -167,8 +205,23 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
 .badge-critical { background: var(--color-danger-surface); color: var(--color-danger); animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
 
-.theme-selector { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary); font-size: var(--font-size-xs); font-weight: 600; white-space: nowrap; }
-.theme-selector select { min-width: 7rem; min-height: 44px; padding: 0.4rem 0.6rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-sunken); color: var(--color-text); font: 600 var(--font-size-sm) var(--font-main); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.theme-selector { display: inline-flex; align-items: center; justify-content: center; }
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.theme-toggle svg { width: 1.2rem; height: 1.2rem; }
+.theme-toggle:hover { border-color: var(--color-border-strong); background: var(--color-surface-raised); }
+.app-header-quick-controls { display: inline-flex; align-items: center; gap: 0.35rem; }
 .login-toolbar { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
 .login-card { width: min(100%, 26.25rem); padding: 2rem; }
 .facility-config-view { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
@@ -196,13 +249,10 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
   .nav-tab-btn { min-width: 0; padding: 0.5rem 0.25rem; font-size: clamp(0.65rem, 2.8vw, 0.8rem); line-height: 1.2; white-space: normal; }
   .app-header-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .app-account, .app-user-info { display: none; }
-  .app-header-actions .theme-selector { margin-right: auto; }
-  .app-header-actions .theme-selector label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-  .app-header-actions .theme-selector::before { content: "Tema"; color: var(--color-text-secondary); font-size: var(--font-size-xs); font-weight: 600; }
+  .app-header-quick-controls { margin-right: auto; }
   .main-content { padding: 1rem 0.75rem; }
   .gate-operation-header { align-items: flex-start; flex-direction: column; gap: 0.75rem; }
-  .gate-mode-switch { width: 100%; }
-  .gate-mode-switch button { min-width: 0; }
+  .gate-step-indicator { align-self: flex-start; }
   .gate-session-row { align-items: stretch; flex-direction: column; padding: 0.75rem; }
   .gate-session-context { white-space: normal; }
   .gate-session-actions { justify-content: stretch; }
@@ -210,8 +260,6 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
   .gate-edit-plate { min-width: 0; width: 100%; }
   .gate-list-error { align-items: flex-start; flex-direction: column; }
   .gate-list-error .btn { width: 100%; }
-  .sync-banner { align-items: flex-start; flex-direction: column; }
-  .sync-banner > div { flex-wrap: wrap; }
   .dashboard-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 0.75rem; }
   .metric-card { padding: 1rem; }
   .main-content h2 { overflow-wrap: anywhere; }
@@ -232,7 +280,6 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
   .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
   .main-content { padding-inline: 0.75rem; }
   .glass-panel { border-radius: var(--radius-sm); }
-  .sync-banner { padding: 0.75rem; font-size: var(--font-size-xs); }
   .config-panel { padding: 1rem !important; }
   .config-create-panel { padding: 0.85rem; margin-bottom: 1.25rem; }
   .config-facility-fields, .config-area-fields { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
@@ -245,8 +292,6 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
   .managed-area-card > div:last-child > div:last-child .btn { flex: 1; }
   .confirmation-dialog { padding: 1rem !important; }
   .login-card { padding: 1.25rem !important; }
-  .login-toolbar .theme-selector label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
-  .login-toolbar .theme-selector select { max-width: 8rem; }
 }
 @media (max-width: 360px) {
   .app-header { padding-inline: 0.5rem; }
@@ -255,7 +300,6 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
   .main-content { padding-inline: 0.5rem; }
   .gate-operation-card, .gate-active-panel { padding: 0.75rem; }
   .nav-tab-btn { padding-inline: 0.1rem; font-size: 0.65rem; }
-  .app-header-actions .theme-selector select { max-width: 6rem; }
 }
 @media (min-width: 769px) {
   .gate-workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getPendingOutboxMutations } from "../db/indexed-db";
 import { processDeltaSync } from "../db/outbox-sync";
 
@@ -12,6 +12,7 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const syncLock = useRef(false);
 
   const checkPending = async () => {
     try {
@@ -23,7 +24,8 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
   };
 
   const runSync = async () => {
-    if (!navigator.onLine || isSyncing) return;
+    if (!navigator.onLine || syncLock.current) return;
+    syncLock.current = true;
     setIsSyncing(true);
     try {
       const result = await processDeltaSync(facilityId, "gate-pwa-01");
@@ -34,6 +36,7 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
     } catch (err) {
       console.warn("Error durante sincronización delta:", err);
     } finally {
+      syncLock.current = false;
       setIsSyncing(false);
       await checkPending();
     }
@@ -64,34 +67,52 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
     };
   }, [facilityId, pendingCount]);
 
-  return (
-    <div className={`sync-banner ${isOnline ? "sync-online" : "sync-offline"}`} role="status" aria-live="polite">
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <span>{isOnline ? "● Conectado (Online)" : "▲ Sin conexión de red (Modo Offline)"}</span>
-        {pendingCount > 0 && (
-          <span style={{ opacity: 0.9 }}>
-            — {pendingCount} mutaciones pendientes de envío
-          </span>
-        )}
-      </div>
+  const canSync = isOnline && pendingCount > 0 && !isSyncing;
+  const pendingDescription = pendingCount === 1 ? "1 cambio pendiente" : `${pendingCount} cambios pendientes`;
+  const statusDescription = isSyncing
+    ? `Conectado. Sincronizando ${pendingDescription}.`
+    : isOnline
+      ? pendingCount > 0
+        ? `Conectado. ${pendingDescription}. Pulsa el indicador para sincronizar ahora.`
+        : "Conectado. Sin cambios pendientes de sincronización."
+      : pendingCount > 0
+        ? `Sin conexión. ${pendingDescription}. Se sincronizarán al recuperar la conexión.`
+        : "Sin conexión. Los cambios nuevos se guardarán para sincronizarse después.";
+  const statusTitle = lastSyncTime
+    ? `${statusDescription} Última sincronización: ${lastSyncTime}.`
+    : statusDescription;
 
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        {lastSyncTime && (
-          <span style={{ fontSize: "0.8rem", opacity: 0.8 }}>
-            Última sync: {lastSyncTime}
+  return (
+    <div className="sync-indicator">
+      <button
+        type="button"
+        className={`sync-indicator-button ${isOnline ? "sync-online" : "sync-offline"} ${isSyncing ? "is-syncing" : ""}`}
+        aria-label={statusTitle}
+        aria-describedby="sync-status-description"
+        aria-busy={isSyncing}
+        title={statusTitle}
+        disabled={!canSync}
+        onClick={() => { void runSync(); }}
+      >
+        {isOnline ? (
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 8.8a15.7 15.7 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 3.2a6 6 0 0 1 8 0" />
+            <circle cx="12" cy="18.5" r="1" fill="currentColor" stroke="none" />
+          </svg>
+        ) : (
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m2 2 20 20M8.5 8.5a6 6 0 0 1 7 1.3M5 12a11 11 0 0 1 2.4-1.7m4.6 8.2.01 0M2 8.8a15.7 15.7 0 0 1 3.5-2.2M22 8.8a15.7 15.7 0 0 0-4.2-2.5" />
+          </svg>
+        )}
+        {pendingCount > 0 && (
+          <span className="sync-pending-badge" aria-hidden="true">
+            {pendingCount > 99 ? "99+" : pendingCount}
           </span>
         )}
-        {isOnline && pendingCount > 0 && (
-          <button
-            onClick={runSync}
-            disabled={isSyncing}
-            className="btn btn-secondary"
-            style={{ padding: "0.25rem 0.65rem", fontSize: "0.8rem" }}
-          >
-            {isSyncing ? "Sincronizando..." : "Sincronizar ahora"}
-          </button>
-        )}
-      </div>
+      </button>
+      <span id="sync-status-description" className="sr-only" role="status" aria-live="polite">
+        {statusDescription}
+      </span>
     </div>
   );
 };

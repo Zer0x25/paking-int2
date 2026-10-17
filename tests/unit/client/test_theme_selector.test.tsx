@@ -5,18 +5,16 @@ import { ThemeProvider } from "@client/components/ThemeProvider";
 import { ThemeSelector } from "@client/components/ThemeSelector";
 
 describe("ThemeSelector", () => {
-  it("exposes an accessible native selector with the exact theme choices", () => {
+  it("exposes one accessible button for switching between light and dark themes", () => {
     const markup = renderToStaticMarkup(
       <ThemeProvider>
         <ThemeSelector />
       </ThemeProvider>
     );
 
-    expect(markup).toContain('label for="theme-preference"');
-    expect(markup).toContain(">Tema visual</label>");
-    expect(markup).toContain('<select id="theme-preference" name="theme-preference"');
-    expect(markup).toContain('<option value="system" selected="">Sistema</option>');
-    expect(markup).toContain('<option value="light">Claro</option>');
-    expect(markup).toContain('<option value="dark">Oscuro</option>');
+    expect(markup.match(/<button\b/g)).toHaveLength(1);
+    expect(markup).toContain('type="button"');
+    expect(markup).toContain('aria-label="Tema actual claro. Cambiar a tema oscuro"');
+    expect(markup).not.toContain("<select");
   });
 });
