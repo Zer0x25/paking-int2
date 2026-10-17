@@ -1,7 +1,6 @@
 import { Hono } from "hono";
-import type { AppEnvironment } from "../types/app-environment";
 import {
-  FacilitySchema,
+  CreateFacilityInputSchema,
   UpdateFacilityInputSchema,
   CreateParkingAreaInputSchema,
   UpdateParkingAreaCapacityInputSchema,
@@ -13,10 +12,8 @@ import {
   CreateEventBookingInputSchema,
   UpdateEventBookingInputSchema,
   CancelEventBookingInputSchema,
-  type EventBooking,
-  type Facility,
-  type ParkingArea,
   type BusinessUnit,
+  type EventBooking,
 } from "@core/types/schema";
 import {
   calculateFacilityBuffer,
@@ -38,604 +35,424 @@ import {
   updateBusinessUnit,
   deactivateBusinessUnit,
 } from "@core/rules/businessUnitRules";
-import {
-  defaultFacility,
-  businessUnitsStore,
-  businessUnitAuditStore,
-  eventBookingsStore,
-  eventBookingAuditStore,
-} from "../services/allocation-service";
-import { mockSessionsRepo } from "./parking";
 import { authMiddleware } from "../middleware/auth";
+import type { AppEnvironment } from "../types/app-environment";
+import {
+  createAreaRecord,
+  createBusinessUnitRecord,
+  createEventRecord,
+  createFacilityRecord,
+  listFacilities,
+  loadFacilitySnapshot,
+  updateAreaRecord,
+  updateBusinessUnitRecord,
+  updateEventRecord,
+  updateFacilityRecord,
+} from "../db/repositories/catalog-repository";
+import { mutationFailure, readFailure } from "./http-errors";
 
 export const facilityRoutes = new Hono<AppEnvironment>();
-export { businessUnitsStore };
 
-// Memory store of facilities
-export const facilitiesStore = [defaultFacility];
+function actor(c: { get: (key: "user") => AppEnvironment["Variables"]["user"] | undefined }): { userId: string } {
+  return { userId: c.get("user")?.userId ?? "local-system" };
+}
 
-// Memory store of parking areas
-export const parkingAreasStore: ParkingArea[] = [
-  {
-    id: "area-default-01",
-    facilityId: defaultFacility.id,
-    name: "Subsuelo Techado (Nivel -1)",
-    code: "SUB-1",
-    description: "Estacionamiento techado principal",
-    allocatedCapacity: 50,
-    businessUnitId: null, // Compartido
-    isActive: true,
-    version: 1,
-    createdAt: "2026-10-15T00:00:00.000Z",
-    updatedAt: "2026-10-15T00:00:00.000Z",
-  },
-  {
-    id: "area-default-02",
-    facilityId: defaultFacility.id,
-    name: "Sector Preferencial Hotel",
-    code: "HOTEL-P1",
-    description: "Acceso directo a lobby hotel",
-    allocatedCapacity: 30,
-    businessUnitId: "bu-hotel-01", // Exclusivo Hotel
-    isActive: true,
-    version: 1,
-    createdAt: "2026-10-15T00:00:00.000Z",
-    updatedAt: "2026-10-15T00:00:00.000Z",
-  },
-];
+function ruleFailure(error: unknown, fallback: string) {
+  return { error: error instanceof Error ? error.message : fallback };
+}
+
+function guaranteedQuota(units: BusinessUnit[]): number {
+  return units.filter((unit) => unit.isActive && unit.quotaType === "guaranteed")
+    .reduce((sum, unit) => sum + unit.defaultQuota, 0);
+}
+
+function validateUnitCapacity(facilityCapacity: number, units: BusinessUnit[], events: EventBooking[]): void {
+  const guaranteed = guaranteedQuota(units);
+  if (guaranteed > facilityCapacity) {
+    throw new Error(`La suma de cuotas garantizadas (${guaranteed}) supera el aforo de la instalación (${facilityCapacity})`);
+  }
+  const visible = events.filter((event) => isEventVisible(event, new Date()));
+  for (const event of visible) validateEventBookingCapacity(event, visible, facilityCapacity, guaranteed);
+}
+
+function isContractualUnit(units: BusinessUnit[], businessUnitId: string): boolean {
+  return units.some((unit) => unit.id === businessUnitId && unit.isActive && unit.quotaType === "contractual");
+}
 
 // GET /api/facilities
-facilityRoutes.get("/", (c) => {
-  return c.json({ facilities: facilitiesStore });
+facilityRoutes.get("/", async (c) => {
+  try {
+    return c.json({ facilities: await listFacilities(c.env) });
+  } catch (error) {
+    const failure = readFailure(error, "No se pudieron cargar las instalaciones");
+    return c.json(failure, failure.status);
+  }
 });
 
 // POST /api/facilities
 facilityRoutes.post("/", async (c) => {
   const body = await c.req.json();
-  const parsed = FacilitySchema.safeParse({
-    ...body,
-    id: body.id || crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
-
-  if (!parsed.success) {
-    return c.json({ error: "Datos de instalación inválidos", details: parsed.error.format() }, 400);
+  const parsed = CreateFacilityInputSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "Datos de instalación inválidos", details: parsed.error.format() }, 400);
+  const now = new Date().toISOString();
+  const facility = { ...parsed.data, id: typeof body.id === "string" && body.id ? body.id : crypto.randomUUID(), createdAt: now, updatedAt: now };
+  try {
+    await createFacilityRecord(c.env, facility, actor(c));
+    return c.json({ facility }, 201);
+  } catch (error) {
+    const failure = mutationFailure(error, "No se pudo crear la instalación");
+    return c.json(failure, failure.status);
   }
-
-  facilitiesStore.push(parsed.data);
-  return c.json({ facility: parsed.data }, 201);
 });
 
 // PUT /api/facilities/:id
 facilityRoutes.put("/:id", async (c) => {
-  const facilityId = c.req.param("id") as string;
-  const facility = facilitiesStore.find((f) => f.id === facilityId);
-  if (!facility) {
-    return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-  }
-
-  const body = await c.req.json();
-  const parsed = UpdateFacilityInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de actualización inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const { name, address, totalCapacity } = parsed.data;
-
-  if (totalCapacity !== undefined) {
-    const existingAreas = parkingAreasStore.filter((a) => a.facilityId === facilityId);
-    const activeSessionsCount = mockSessionsRepo.filter(
-      (s) => s.facilityId === facilityId && s.status === "active"
-    ).length;
-
-    try {
-      validateFacilityCapacity(totalCapacity, existingAreas, activeSessionsCount);
-    } catch (err: unknown) {
-      return c.json({ error: err instanceof Error ? err.message : "Error de capacidad" }, 409);
+  const facilityId = c.req.param("id")!;
+  const parsed = UpdateFacilityInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de actualización inválidos", details: parsed.error.format() }, 400);
+  try {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    if (parsed.data.totalCapacity !== undefined) {
+      try {
+        validateFacilityCapacity(parsed.data.totalCapacity, snapshot.areas, snapshot.activeSessions.length);
+      } catch (error) {
+        return c.json(ruleFailure(error, "Error de capacidad"), 409);
+      }
     }
-    facility.totalCapacity = totalCapacity;
+    const facility = await updateFacilityRecord(c.env, {
+      facilityId,
+      expectedVersion: snapshot.facilityVersion,
+      updates: parsed.data,
+      current: snapshot.facility,
+      actor: actor(c),
+      activeSessions: snapshot.activeSessions,
+      areas: snapshot.areas,
+    });
+    return c.json({ facility }, 200);
+  } catch (error) {
+    const failure = mutationFailure(error, "No se pudo actualizar la instalación");
+    return c.json(failure, failure.status);
   }
-
-  if (name !== undefined) facility.name = name;
-  if (address !== undefined) facility.address = address;
-  facility.updatedAt = new Date().toISOString();
-
-  return c.json({ facility }, 200);
 });
 
-function recordBusinessUnitMutation(
-  userId: string,
-  unit: BusinessUnit,
-  action: "created" | "updated" | "deactivated",
-  before: BusinessUnit | null,
-): void {
-  businessUnitAuditStore.push({
-    id: crypto.randomUUID(),
-    facilityId: unit.facilityId,
-    businessUnitId: unit.id,
-    userId,
-    action,
-    before,
-    after: unit,
-    createdAt: new Date().toISOString(),
-  });
-}
-
-// GET /api/facilities/:id/business-units (management inventory, includes inactive history)
-facilityRoutes.get("/:id/business-units", authMiddleware("admin"), (c) => {
-  const facilityId = c.req.param("id") as string;
-  if (!facilitiesStore.some((facility) => facility.id === facilityId)) {
-    return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+// GET /api/facilities/:id/business-units
+facilityRoutes.get("/:id/business-units", authMiddleware("admin"), async (c) => {
+  const facilityId = c.req.param("id")!;
+  try {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const businessUnits = snapshot.businessUnits.sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name));
+    return c.json({ businessUnits });
+  } catch (error) {
+    const failure = readFailure(error, "No se pudieron cargar las unidades de negocio");
+    return c.json(failure, failure.status);
   }
-
-  const units = businessUnitsStore
-    .filter((unit) => unit.facilityId === facilityId)
-    .sort((left, right) => Number(right.isActive) - Number(left.isActive) || left.name.localeCompare(right.name));
-  return c.json({ businessUnits: units });
 });
 
 // POST /api/facilities/:id/business-units
 facilityRoutes.post("/:id/business-units", authMiddleware("admin"), async (c) => {
-  const facilityId = c.req.param("id") as string;
-  const facility = facilitiesStore.find((item) => item.id === facilityId);
-  if (!facility) {
-    return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-  }
-
-  const body = await c.req.json();
-  const parsed = CreateBusinessUnitInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de unidad de negocio inválidos", details: parsed.error.format() }, 400);
-  }
-
+  const facilityId = c.req.param("id")!;
+  const parsed = CreateBusinessUnitInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de unidad de negocio inválidos", details: parsed.error.format() }, 400);
   try {
-    const unit = createBusinessUnit(
-      parsed.data,
-      facilityId,
-      businessUnitsStore,
-      crypto.randomUUID(),
-    );
-    validateBusinessUnitCapacity(facility, [...businessUnitsStore, unit]);
-    businessUnitsStore.push(unit);
-    recordBusinessUnitMutation(c.get("user").userId, unit, "created", null);
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const unit = createBusinessUnit(parsed.data, facilityId, snapshot.businessUnits, crypto.randomUUID());
+    validateUnitCapacity(snapshot.facility.totalCapacity, [...snapshot.businessUnits, unit], snapshot.events);
+    await createBusinessUnitRecord(c.env, { unit, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ businessUnit: unit }, 201);
-  } catch (error: unknown) {
-    return c.json({ error: error instanceof Error ? error.message : "No se pudo crear la unidad" }, 409);
+  } catch (error) {
+    if (error instanceof Error && !(error.name === "PersistenceConflictError" || error.name === "PersistenceWriteError" || error.name === "MissingD1BindingError")) return c.json(ruleFailure(error, "No se pudo crear la unidad"), 409);
+    const failure = mutationFailure(error, "No se pudo crear la unidad");
+    return c.json(failure, failure.status);
   }
 });
 
 // PUT /api/facilities/:id/business-units/:businessUnitId
 facilityRoutes.put("/:id/business-units/:businessUnitId", authMiddleware("admin"), async (c) => {
-  const facilityId = c.req.param("id") as string;
-  const businessUnitId = c.req.param("businessUnitId");
-  const facility = facilitiesStore.find((item) => item.id === facilityId);
-  if (!facility) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-
-  const currentIndex = businessUnitsStore.findIndex(
-    (unit) => unit.id === businessUnitId && unit.facilityId === facilityId,
-  );
-  if (currentIndex < 0) return c.json({ error: `Unidad "${businessUnitId}" no encontrada` }, 404);
-
-  const body = await c.req.json();
-  const parsed = UpdateBusinessUnitInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de actualización de unidad inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const current = businessUnitsStore[currentIndex];
+  const facilityId = c.req.param("id")!;
+  const businessUnitId = c.req.param("businessUnitId")!;
+  const parsed = UpdateBusinessUnitInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de actualización de unidad inválidos", details: parsed.error.format() }, 400);
   try {
-    const updated = updateBusinessUnit({ current, updates: parsed.data, businessUnits: businessUnitsStore });
-    const visibleUnitEvents = eventBookingsStore.filter(
-      (event) => event.facilityId === facilityId && event.businessUnitId === current.id && isEventVisible(event, new Date()),
-    );
-    if (visibleUnitEvents.length > 0 && updated.quotaType !== "contractual") {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const current = snapshot.businessUnits.find((unit) => unit.id === businessUnitId);
+    if (!current) return c.json({ error: `Unidad "${businessUnitId}" no encontrada` }, 404);
+    const updated = updateBusinessUnit({ current, updates: parsed.data, businessUnits: snapshot.businessUnits });
+    if (snapshot.events.some((event) => event.businessUnitId === current.id && isEventVisible(event, new Date())) && updated.quotaType !== "contractual") {
       throw new Error("No se puede cambiar el tipo de cuota mientras la unidad tenga reservas vigentes");
     }
-
-    const nextUnits = businessUnitsStore.map((unit, index) => index === currentIndex ? updated : unit);
-    validateBusinessUnitCapacity(facility, nextUnits);
-
-    businessUnitsStore[currentIndex] = updated;
-    recordBusinessUnitMutation(c.get("user").userId, updated, "updated", current);
+    const units = snapshot.businessUnits.map((unit) => unit.id === updated.id ? updated : unit);
+    validateUnitCapacity(snapshot.facility.totalCapacity, units, snapshot.events);
+    await updateBusinessUnitRecord(c.env, { unit: updated, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ businessUnit: updated }, 200);
-  } catch (error: unknown) {
-    return c.json({ error: error instanceof Error ? error.message : "No se pudo actualizar la unidad" }, 409);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "No se pudo actualizar la unidad"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo actualizar la unidad");
+    return c.json(failure, failure.status);
   }
 });
 
 // PATCH /api/facilities/:id/business-units/:businessUnitId/status
 facilityRoutes.patch("/:id/business-units/:businessUnitId/status", authMiddleware("admin"), async (c) => {
-  const facilityId = c.req.param("id") as string;
-  const businessUnitId = c.req.param("businessUnitId");
-  if (!facilitiesStore.some((facility) => facility.id === facilityId)) {
-    return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-  }
-  const currentIndex = businessUnitsStore.findIndex(
-    (unit) => unit.id === businessUnitId && unit.facilityId === facilityId,
-  );
-  if (currentIndex < 0) return c.json({ error: `Unidad "${businessUnitId}" no encontrada` }, 404);
-
-  const body = await c.req.json();
-  const parsed = DeactivateBusinessUnitInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de retiro de unidad inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const current = businessUnitsStore[currentIndex];
-  const activeSessions = mockSessionsRepo.filter(
-    (session) => session.facilityId === facilityId && session.businessUnitId === current.id && session.status === "active",
-  ).length;
-  const exclusiveAreas = parkingAreasStore.filter(
-    (area) => area.facilityId === facilityId && area.businessUnitId === current.id && area.isActive,
-  ).length;
-  const visibleBookings = eventBookingsStore.filter(
-    (event) => event.facilityId === facilityId && event.businessUnitId === current.id && isEventVisible(event, new Date()),
-  ).length;
-  const dependencies = [
-    activeSessions ? `${activeSessions} sesión activa${activeSessions === 1 ? "" : "s"}` : null,
-    exclusiveAreas ? `${exclusiveAreas} área${exclusiveAreas === 1 ? "" : "s"} exclusiva${exclusiveAreas === 1 ? "" : "s"} activa${exclusiveAreas === 1 ? "" : "s"}` : null,
-    visibleBookings ? `${visibleBookings} reserva${visibleBookings === 1 ? "" : "s"} vigente${visibleBookings === 1 ? "" : "s"}` : null,
-  ].filter((dependency): dependency is string => dependency !== null);
-
+  const facilityId = c.req.param("id")!;
+  const businessUnitId = c.req.param("businessUnitId")!;
+  const parsed = DeactivateBusinessUnitInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de retiro de unidad inválidos", details: parsed.error.format() }, 400);
   try {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const current = snapshot.businessUnits.find((unit) => unit.id === businessUnitId);
+    if (!current) return c.json({ error: `Unidad "${businessUnitId}" no encontrada` }, 404);
+    const sessions = snapshot.activeSessions.filter((session) => session.businessUnitId === current.id).length;
+    const exclusiveAreas = snapshot.areas.filter((area) => area.businessUnitId === current.id && area.isActive).length;
+    const bookings = snapshot.events.filter((event) => event.businessUnitId === current.id && isEventVisible(event, new Date())).length;
+    const dependencies = [
+      sessions ? `${sessions} sesión activa${sessions === 1 ? "" : "es"}` : null,
+      exclusiveAreas ? `${exclusiveAreas} área${exclusiveAreas === 1 ? "" : "s"} exclusiva${exclusiveAreas === 1 ? "" : "s"} activa${exclusiveAreas === 1 ? "" : "s"}` : null,
+      bookings ? `${bookings} reserva${bookings === 1 ? "" : "s"} vigente${bookings === 1 ? "" : "s"}` : null,
+    ].filter((dependency): dependency is string => Boolean(dependency));
     const retired = deactivateBusinessUnit(current, parsed.data.version, dependencies);
-    businessUnitsStore[currentIndex] = retired;
-    recordBusinessUnitMutation(c.get("user").userId, retired, "deactivated", current);
+    await updateBusinessUnitRecord(c.env, { unit: retired, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ businessUnit: retired }, 200);
-  } catch (error: unknown) {
-    return c.json({ error: error instanceof Error ? error.message : "No se pudo retirar la unidad" }, 409);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "No se pudo retirar la unidad"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo retirar la unidad");
+    return c.json(failure, failure.status);
   }
 });
 
 // GET /api/facilities/:id/areas
-facilityRoutes.get("/:id/areas", (c) => {
-  const facilityId = c.req.param("id");
-  const facility = facilitiesStore.find((f) => f.id === facilityId) || defaultFacility;
-  const areas = parkingAreasStore.filter((a) => a.facilityId === facility.id);
-  const activeAreas = areas.filter((area) => area.isActive);
-
-  const allocatedSum = activeAreas.reduce((sum, a) => sum + a.allocatedCapacity, 0);
-  const floatingBuffer = calculateFacilityBuffer(facility.totalCapacity, activeAreas);
-
-  const areasWithMetrics = areas.map((area) => {
-    const metrics = calculateAreaAvailability(area, mockSessionsRepo);
-    return {
-      ...area,
-      activeOccupancy: metrics.occupied,
-      availableSlots: area.isActive ? metrics.available : 0,
-      occupancyPercentage: area.isActive ? metrics.occupancyPercentage : 0,
-      isSaturated: area.isActive && metrics.isSaturated,
-    };
-  });
-
-  return c.json({
-    facilityId: facility.id,
-    totalCapacity: facility.totalCapacity,
-    allocatedCapacitySum: allocatedSum,
-    floatingBuffer,
-    areas: areasWithMetrics,
-  });
+facilityRoutes.get("/:id/areas", async (c) => {
+  const facilityId = c.req.param("id")!;
+  try {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const activeAreas = snapshot.areas.filter((area) => area.isActive);
+    const allocatedCapacitySum = activeAreas.reduce((sum, area) => sum + area.allocatedCapacity, 0);
+    const areas = snapshot.areas.map((area) => {
+      const metrics = calculateAreaAvailability(area, snapshot.activeSessions);
+      return {
+        ...area,
+        activeOccupancy: metrics.occupied,
+        availableSlots: area.isActive ? metrics.available : 0,
+        occupancyPercentage: area.isActive ? metrics.occupancyPercentage : 0,
+        isSaturated: area.isActive && metrics.isSaturated,
+      };
+    });
+    return c.json({ facilityId: snapshot.facility.id, totalCapacity: snapshot.facility.totalCapacity, allocatedCapacitySum,
+      floatingBuffer: calculateFacilityBuffer(snapshot.facility.totalCapacity, activeAreas), areas });
+  } catch (error) {
+    const failure = readFailure(error, "No se pudieron cargar las áreas");
+    return c.json(failure, failure.status);
+  }
 });
 
 // POST /api/facilities/:id/areas
 facilityRoutes.post("/:id/areas", async (c) => {
-  const facilityId = c.req.param("id");
-  const facility = facilitiesStore.find((f) => f.id === facilityId) || defaultFacility;
-  const body = await c.req.json();
-
-  const parsed = CreateParkingAreaInputSchema.safeParse({
-    ...body,
-    facilityId,
-  });
-
-  if (!parsed.success) {
-    return c.json({ error: "Datos de área inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const existingAreas = parkingAreasStore.filter((a) => a.facilityId === facility.id);
-
+  const facilityId = c.req.param("id")!;
+  const parsed = CreateParkingAreaInputSchema.safeParse({ ...(await c.req.json()), facilityId });
+  if (!parsed.success) return c.json({ error: "Datos de área inválidos", details: parsed.error.format() }, 400);
   try {
-    const newArea = createParkingArea(parsed.data, existingAreas, facility.totalCapacity);
-    parkingAreasStore.push(newArea);
-    return c.json({ area: newArea }, 201);
-  } catch (err: unknown) {
-    return c.json({ error: err instanceof Error ? err.message : "Error al crear el área" }, 409);
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    if (parsed.data.businessUnitId && !snapshot.businessUnits.some((unit) => unit.id === parsed.data.businessUnitId && unit.isActive)) {
+      return c.json({ error: "La unidad asignada no está activa en esta instalación" }, 409);
+    }
+    const area = createParkingArea(parsed.data, snapshot.areas, snapshot.facility.totalCapacity);
+    await createAreaRecord(c.env, { area, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
+    return c.json({ area }, 201);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "Error al crear el área"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo crear el área");
+    return c.json(failure, failure.status);
   }
 });
 
 // PATCH /api/facilities/:id/areas/:areaId/capacity
 facilityRoutes.patch("/:id/areas/:areaId/capacity", async (c) => {
-  const facilityId = c.req.param("id");
-  const areaId = c.req.param("areaId");
-  const facility = facilitiesStore.find((f) => f.id === facilityId) || defaultFacility;
-
-  const body = await c.req.json();
-  const parsed = UpdateParkingAreaCapacityInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de capacidad inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const existingAreas = parkingAreasStore.filter((a) => a.facilityId === facility.id);
-  const targetArea = existingAreas.find((a) => a.id === areaId);
-  if (!targetArea) {
-    return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
-  }
-
-  const activeSessions = mockSessionsRepo.filter(
-    (s) => s.status === "active" && s.parkingAreaId === areaId
-  );
-
+  const facilityId = c.req.param("id")!;
+  const areaId = c.req.param("areaId")!;
+  const parsed = UpdateParkingAreaCapacityInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de capacidad inválidos", details: parsed.error.format() }, 400);
   try {
-    const updatedArea = reallocateAreaCapacity({
-      areaId,
-      newCapacity: parsed.data.allocatedCapacity,
-      areas: existingAreas,
-      facilityTotalCapacity: facility.totalCapacity,
-      activeOccupancy: activeSessions.length,
-      expectedVersion: parsed.data.version,
-    });
-
-    const index = parkingAreasStore.findIndex((a) => a.id === areaId);
-    if (index !== -1) {
-      parkingAreasStore[index] = updatedArea;
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const targetArea = snapshot.areas.find((area) => area.id === areaId);
+    if (!targetArea) return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
+    const activeOccupancy = snapshot.activeSessions.filter((session) => session.parkingAreaId === areaId).length;
+    const area = reallocateAreaCapacity({ areaId, newCapacity: parsed.data.allocatedCapacity, areas: snapshot.areas,
+      facilityTotalCapacity: snapshot.facility.totalCapacity, activeOccupancy, expectedVersion: parsed.data.version });
+    await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: targetArea });
+    return c.json({ area }, 200);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "Error al ajustar la capacidad"), 409);
     }
-
-    return c.json({ area: updatedArea }, 200);
-  } catch (err: unknown) {
-    return c.json({ error: err instanceof Error ? err.message : "Error al ajustar la capacidad" }, 409);
+    const failure = mutationFailure(error, "No se pudo ajustar la capacidad");
+    return c.json(failure, failure.status);
   }
 });
 
 // PUT /api/facilities/:id/areas/:areaId
 facilityRoutes.put("/:id/areas/:areaId", async (c) => {
-  const facilityId = c.req.param("id");
-  const areaId = c.req.param("areaId");
-  const facility = facilitiesStore.find((item) => item.id === facilityId);
-  if (!facility) {
-    return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-  }
-
-  const body = await c.req.json();
-  const parsed = UpdateParkingAreaInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de actualización de área inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const existingAreas = parkingAreasStore.filter((area) => area.facilityId === facilityId);
-  if (!existingAreas.some((area) => area.id === areaId)) {
-    return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
-  }
-  const activeOccupancy = mockSessionsRepo.filter(
-    (session) => session.status === "active" && session.parkingAreaId === areaId
-  ).length;
-
+  const facilityId = c.req.param("id")!;
+  const areaId = c.req.param("areaId")!;
+  const parsed = UpdateParkingAreaInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de actualización de área inválidos", details: parsed.error.format() }, 400);
   try {
-    const updatedArea = updateParkingArea({
-      areaId,
-      ...parsed.data,
-      areas: existingAreas,
-      facilityTotalCapacity: facility.totalCapacity,
-      activeOccupancy,
-      expectedVersion: parsed.data.version,
-    });
-    const index = parkingAreasStore.findIndex((area) => area.id === areaId);
-    parkingAreasStore[index] = updatedArea;
-    return c.json({ area: updatedArea }, 200);
-  } catch (err: unknown) {
-    return c.json({ error: err instanceof Error ? err.message : "No se pudo actualizar el área" }, 409);
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const current = snapshot.areas.find((area) => area.id === areaId);
+    if (!current) return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
+    const occupancy = snapshot.activeSessions.filter((session) => session.parkingAreaId === areaId).length;
+    const area = updateParkingArea({ areaId, ...parsed.data, areas: snapshot.areas, facilityTotalCapacity: snapshot.facility.totalCapacity,
+      activeOccupancy: occupancy, expectedVersion: parsed.data.version });
+    await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: current });
+    return c.json({ area }, 200);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "No se pudo actualizar el área"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo actualizar el área");
+    return c.json(failure, failure.status);
   }
 });
 
 // PATCH /api/facilities/:id/areas/:areaId/status
 facilityRoutes.patch("/:id/areas/:areaId/status", async (c) => {
-  const facilityId = c.req.param("id");
-  const areaId = c.req.param("areaId");
-  const facility = facilitiesStore.find((item) => item.id === facilityId);
-  if (!facility) {
-    return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-  }
-
-  const body = await c.req.json();
-  const parsed = DeactivateParkingAreaInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de estado de área inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const existingAreas = parkingAreasStore.filter((area) => area.facilityId === facilityId);
-  if (!existingAreas.some((area) => area.id === areaId)) {
-    return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
-  }
-  const activeOccupancy = mockSessionsRepo.filter(
-    (session) => session.status === "active" && session.parkingAreaId === areaId
-  ).length;
-
+  const facilityId = c.req.param("id")!;
+  const areaId = c.req.param("areaId")!;
+  const parsed = DeactivateParkingAreaInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de estado de área inválidos", details: parsed.error.format() }, 400);
   try {
-    const updatedArea = deactivateParkingArea({
-      areaId,
-      areas: existingAreas,
-      activeOccupancy,
-      expectedVersion: parsed.data.version,
-    });
-    const index = parkingAreasStore.findIndex((area) => area.id === areaId);
-    parkingAreasStore[index] = updatedArea;
-    return c.json({ area: updatedArea }, 200);
-  } catch (err: unknown) {
-    return c.json({ error: err instanceof Error ? err.message : "No se pudo desactivar el área" }, 409);
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const current = snapshot.areas.find((area) => area.id === areaId);
+    if (!current) return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
+    const occupancy = snapshot.activeSessions.filter((session) => session.parkingAreaId === areaId).length;
+    const area = deactivateParkingArea({ areaId, areas: snapshot.areas, activeOccupancy: occupancy, expectedVersion: parsed.data.version });
+    await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: current });
+    return c.json({ area }, 200);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "No se pudo desactivar el área"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo desactivar el área");
+    return c.json(failure, failure.status);
   }
 });
 
-function getGuaranteedQuota(facilityId: string, units: BusinessUnit[] = businessUnitsStore): number {
-  return units
-    .filter((unit) => unit.facilityId === facilityId && unit.isActive && unit.quotaType === "guaranteed")
-    .reduce((total, unit) => total + unit.defaultQuota, 0);
-}
-
-function validateBusinessUnitCapacity(facility: Facility, units: BusinessUnit[]): void {
-  const guaranteedQuota = getGuaranteedQuota(facility.id, units);
-  if (guaranteedQuota > facility.totalCapacity) {
-    throw new Error(
-      `La suma de cuotas garantizadas (${guaranteedQuota}) supera el aforo de la instalación (${facility.totalCapacity})`,
-    );
-  }
-
-  const visibleEvents = eventBookingsStore.filter(
-    (event) => event.facilityId === facility.id && isEventVisible(event, new Date()),
-  );
-  for (const event of visibleEvents) {
-    validateEventBookingCapacity(event, visibleEvents, facility.totalCapacity, guaranteedQuota);
-  }
-}
-
-function isContractualUnit(facilityId: string, businessUnitId: string): boolean {
-  return businessUnitsStore.some(
-    (unit) => unit.id === businessUnitId && unit.facilityId === facilityId && unit.isActive && unit.quotaType === "contractual",
-  );
-}
-
-function recordEventMutation(
-  actorUserId: string,
-  event: EventBooking,
-  action: "created" | "updated" | "cancelled",
-  details: Record<string, unknown>,
-): void {
-  eventBookingAuditStore.push({
-    id: crypto.randomUUID(),
-    facilityId: event.facilityId,
-    eventId: event.id,
-    userId: actorUserId,
-    action,
-    details,
-    createdAt: new Date().toISOString(),
-  });
-}
-
 // GET /api/facilities/:id/events
-facilityRoutes.get("/:id/events", authMiddleware("admin"), (c) => {
-  const facilityId = c.req.param("id") as string;
-  if (!facilitiesStore.some((facility) => facility.id === facilityId)) {
-    return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+facilityRoutes.get("/:id/events", authMiddleware("admin"), async (c) => {
+  const facilityId = c.req.param("id")!;
+  try {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    return c.json({ events: snapshot.events.sort((a, b) => a.startTime.localeCompare(b.startTime)) });
+  } catch (error) {
+    const failure = readFailure(error, "No se pudieron cargar las reservas");
+    return c.json(failure, failure.status);
   }
-
-  const events = eventBookingsStore
-    .filter((event) => event.facilityId === facilityId)
-    .sort((left, right) => left.startTime.localeCompare(right.startTime));
-  return c.json({ events });
 });
 
 // POST /api/facilities/:id/events
 facilityRoutes.post("/:id/events", authMiddleware("admin"), async (c) => {
-  const facilityId = c.req.param("id") as string;
-  const facility = facilitiesStore.find((item) => item.id === facilityId);
-  if (!facility) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-
-  const body = await c.req.json();
-  const parsed = CreateEventBookingInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de reserva inválidos", details: parsed.error.format() }, 400);
-  }
-  if (!isContractualUnit(facilityId, parsed.data.businessUnitId as string)) {
-    return c.json({ error: "La unidad de negocio debe estar activa y tener cuota contractual" }, 400);
-  }
-
-  const event: EventBooking = {
-    ...parsed.data,
-    id: crypto.randomUUID(),
-    facilityId,
-    status: "scheduled",
-    version: 1,
-  };
+  const facilityId = c.req.param("id")!;
+  const parsed = CreateEventBookingInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de reserva inválidos", details: parsed.error.format() }, 400);
   try {
-    const existing = eventBookingsStore.filter((item) => item.facilityId === facilityId);
-    validateEventBookingCapacity(event, existing, facility.totalCapacity, getGuaranteedQuota(facilityId));
-    eventBookingsStore.push(event);
-    recordEventMutation(c.get("user").userId, event, "created", { event });
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    if (!isContractualUnit(snapshot.businessUnits, parsed.data.businessUnitId)) {
+      return c.json({ error: "La unidad de negocio debe estar activa y tener cuota contractual" }, 400);
+    }
+    const event: EventBooking = { ...parsed.data, id: crypto.randomUUID(), facilityId, status: "scheduled", version: 1 };
+    validateEventBookingCapacity(event, snapshot.events, snapshot.facility.totalCapacity, guaranteedQuota(snapshot.businessUnits));
+    await createEventRecord(c.env, { event, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ event }, 201);
-  } catch (error: unknown) {
-    return c.json({ error: error instanceof Error ? error.message : "No se pudo crear la reserva" }, 409);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "No se pudo crear la reserva"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo crear la reserva");
+    return c.json(failure, failure.status);
   }
 });
 
 // PUT /api/facilities/:id/events/:eventId
 facilityRoutes.put("/:id/events/:eventId", authMiddleware("admin"), async (c) => {
-  const facilityId = c.req.param("id") as string;
-  const eventId = c.req.param("eventId") as string;
-  const facility = facilitiesStore.find((item) => item.id === facilityId);
-  if (!facility) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
-
-  const currentIndex = eventBookingsStore.findIndex((event) => event.id === eventId && event.facilityId === facilityId);
-  if (currentIndex < 0) return c.json({ error: `Reserva "${eventId}" no encontrada` }, 404);
-
-  const body = await c.req.json();
-  const parsed = UpdateEventBookingInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de actualización inválidos", details: parsed.error.format() }, 400);
-  }
-  if (!isContractualUnit(facilityId, parsed.data.businessUnitId as string)) {
-    return c.json({ error: "La unidad de negocio debe estar activa y tener cuota contractual" }, 400);
-  }
-
-  const current = eventBookingsStore[currentIndex];
+  const facilityId = c.req.param("id")!;
+  const eventId = c.req.param("eventId")!;
+  const parsed = UpdateEventBookingInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de actualización inválidos", details: parsed.error.format() }, 400);
   try {
-    const updated = updateEventBooking({
-      current,
-      updates: parsed.data,
-      events: eventBookingsStore.filter((event) => event.facilityId === facilityId),
-      facilityCapacity: facility.totalCapacity,
-      guaranteedQuota: getGuaranteedQuota(facilityId),
-    });
-    eventBookingsStore[currentIndex] = updated;
-    recordEventMutation(c.get("user").userId, updated, "updated", { before: current, after: updated });
-    return c.json({ event: updated }, 200);
-  } catch (error: unknown) {
-    return c.json({ error: error instanceof Error ? error.message : "No se pudo actualizar la reserva" }, 409);
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const current = snapshot.events.find((event) => event.id === eventId);
+    if (!current) return c.json({ error: `Reserva "${eventId}" no encontrada` }, 404);
+    if (!isContractualUnit(snapshot.businessUnits, parsed.data.businessUnitId)) {
+      return c.json({ error: "La unidad de negocio debe estar activa y tener cuota contractual" }, 400);
+    }
+    const event = updateEventBooking({ current, updates: parsed.data, events: snapshot.events,
+      facilityCapacity: snapshot.facility.totalCapacity, guaranteedQuota: guaranteedQuota(snapshot.businessUnits) });
+    await updateEventRecord(c.env, { event, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
+    return c.json({ event }, 200);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "No se pudo actualizar la reserva"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo actualizar la reserva");
+    return c.json(failure, failure.status);
   }
 });
 
 // PATCH /api/facilities/:id/events/:eventId/status
 facilityRoutes.patch("/:id/events/:eventId/status", authMiddleware("admin"), async (c) => {
-  const facilityId = c.req.param("id") as string;
-  const eventId = c.req.param("eventId") as string;
-  const currentIndex = eventBookingsStore.findIndex((event) => event.id === eventId && event.facilityId === facilityId);
-  if (currentIndex < 0) return c.json({ error: `Reserva "${eventId}" no encontrada` }, 404);
-
-  const body = await c.req.json();
-  const parsed = CancelEventBookingInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Datos de cancelación inválidos", details: parsed.error.format() }, 400);
-  }
-
-  const current = eventBookingsStore[currentIndex];
+  const facilityId = c.req.param("id")!;
+  const eventId = c.req.param("eventId")!;
+  const parsed = CancelEventBookingInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de cancelación inválidos", details: parsed.error.format() }, 400);
   try {
-    const cancelled = cancelEventBooking(current, parsed.data.version);
-    eventBookingsStore[currentIndex] = cancelled;
-    recordEventMutation(c.get("user").userId, cancelled, "cancelled", { before: current, after: cancelled });
-    return c.json({ event: cancelled }, 200);
-  } catch (error: unknown) {
-    return c.json({ error: error instanceof Error ? error.message : "No se pudo cancelar la reserva" }, 409);
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const current = snapshot.events.find((event) => event.id === eventId);
+    if (!current) return c.json({ error: `Reserva "${eventId}" no encontrada` }, 404);
+    const event = cancelEventBooking(current, parsed.data.version);
+    await updateEventRecord(c.env, { event, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
+    return c.json({ event }, 200);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
+      return c.json(ruleFailure(error, "No se pudo cancelar la reserva"), 409);
+    }
+    const failure = mutationFailure(error, "No se pudo cancelar la reserva");
+    return c.json(failure, failure.status);
   }
 });
 
 // GET /api/facilities/:id/catalogs
-facilityRoutes.get("/:id/catalogs", (c) => {
-  const facilityId = c.req.param("id");
-  const facility = facilitiesStore.find((f) => f.id === facilityId) || defaultFacility;
-  const units = businessUnitsStore.filter(
-    (unit) => unit.isActive && (unit.facilityId === facility.id || unit.facilityId === defaultFacility.id),
-  );
-  const areas = parkingAreasStore.filter((a) => a.facilityId === facility.id && a.isActive);
-
-  const categories = [
-    { id: "cat-std", facilityId: facility.id, name: "General / Estándar", code: "STD", allocatedSlots: 80 },
-    { id: "cat-acc", facilityId: facility.id, name: "Accesible (PMR)", code: "ACC", allocatedSlots: 10 },
-    { id: "cat-vip", facilityId: facility.id, name: "VIP / Reservado", code: "VIP", allocatedSlots: 10 },
-  ];
-
-  return c.json({
-    facility,
-    categories,
-    businessUnits: units,
-    areas,
-    events: eventBookingsStore.filter((event) => event.facilityId === facility.id),
-  });
+facilityRoutes.get("/:id/catalogs", async (c) => {
+  const facilityId = c.req.param("id")!;
+  try {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    return c.json({
+      facility: snapshot.facility,
+      categories: snapshot.categories,
+      businessUnits: snapshot.businessUnits.filter((unit) => unit.isActive),
+      areas: snapshot.areas.filter((area) => area.isActive),
+      events: snapshot.events,
+    });
+  } catch (error) {
+    const failure = readFailure(error, "No se pudo cargar el catálogo");
+    return c.json(failure, failure.status);
+  }
 });

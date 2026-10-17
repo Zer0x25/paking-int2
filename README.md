@@ -135,6 +135,29 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 ```
 
+## Desarrollo local de Smart Parking
+
+Esta aplicación corre como PWA React/Vite y Worker Hono con D1 local. Prepara credenciales propias en un archivo ignorado por Git:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+Completa `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `OPERATOR_USERNAME`, `OPERATOR_PASSWORD` y `JWT_SECRET` en `.dev.vars`, luego inicializa la base local y el catálogo de desarrollo:
+
+```bash
+npm run db:local:init
+```
+
+Inicia el Worker y la PWA en terminales separadas:
+
+```bash
+npm run worker:dev
+npm run dev
+```
+
+Abre `http://localhost:5173`. Las contraseñas se validan desde `.dev.vars`; D1 local conserva los usuarios, roles, configuración, sesiones y auditoría. Este procedimiento no aplica migraciones ni realiza despliegues en producción. Consulta [la guía de persistencia local](specs/009-d1-persistence/quickstart.md) para verificar los flujos.
+
 ---
 
 ## 📄 Licencia

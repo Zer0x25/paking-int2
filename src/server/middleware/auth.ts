@@ -100,7 +100,8 @@ export function authMiddleware(requiredRole?: UserRole) {
     }
 
     const token = authHeader.substring(7);
-    const secret = c.env?.JWT_SECRET || "supersecret_jwt_key_local_development";
+    const secret = c.env?.JWT_SECRET;
+    if (!secret) return c.json({ error: "Falta configurar JWT_SECRET en .dev.vars" }, 500);
     const payload = await verifyJwt(token, secret);
 
     if (!payload) {

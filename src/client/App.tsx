@@ -7,25 +7,35 @@ import { LoginView } from "./components/LoginView";
 import { ThemeSelector } from "./components/ThemeSelector";
 import { getOperationalViewSections, type ApplicationTab } from "./utils/operational-view";
 import type { Facility, BusinessUnit, SpaceCategory, EventBooking, DashboardMetrics, User, ParkingArea } from "@core/types/schema";
-import { defaultFacility, defaultBusinessUnits, defaultEvents } from "@server/services/allocation-service";
+
+const LOCAL_FACILITY_ID = "fac-default-01";
+
+function readStoredUser(): User | null {
+  try {
+    const cached = localStorage.getItem("auth_user");
+    return cached ? JSON.parse(cached) as User : null;
+  } catch {
+    return null;
+  }
+}
 
 export const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const cached = localStorage.getItem("auth_user");
-    return cached ? JSON.parse(cached) : null;
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(readStoredUser);
 
   const [activeTab, setActiveTab] = useState<ApplicationTab>("garita");
   const visibleSections = getOperationalViewSections(activeTab);
-  const [facility, setFacility] = useState<Facility>(defaultFacility);
-  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>(defaultBusinessUnits);
-  const [spaceCategories, setSpaceCategories] = useState<SpaceCategory[]>([
-    { id: "cat-std", facilityId: defaultFacility.id, name: "General / Estándar", code: "STD", allocatedSlots: 80 },
-    { id: "cat-acc", facilityId: defaultFacility.id, name: "Accesible (PMR)", code: "ACC", allocatedSlots: 10 },
-    { id: "cat-vip", facilityId: defaultFacility.id, name: "VIP / Reservado", code: "VIP", allocatedSlots: 10 },
-  ]);
+  const [facility, setFacility] = useState<Facility>(() => ({
+    id: readStoredUser()?.facilityId || LOCAL_FACILITY_ID,
+    name: "Cargando instalación…",
+    address: "",
+    totalCapacity: 1,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  }));
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [spaceCategories, setSpaceCategories] = useState<SpaceCategory[]>([]);
   const [areas, setAreas] = useState<ParkingArea[]>([]);
-  const [events, setEvents] = useState<EventBooking[]>(defaultEvents);
+  const [events, setEvents] = useState<EventBooking[]>([]);
   const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(false);
   const [gateRefreshKey, setGateRefreshKey] = useState(0);
@@ -42,7 +52,7 @@ export const App: React.FC = () => {
         if (data.events) setEvents(data.events);
       }
     } catch {
-      // Offline fallback: retains defaults
+      // The API remains the source of facility configuration; IndexedDB owns queued operations.
     }
   };
 
@@ -55,7 +65,7 @@ export const App: React.FC = () => {
         setDashboardMetrics(data);
       }
     } catch {
-      // Offline fallback: compute locally if possible
+      // Keep the last dashboard snapshot while the API is unavailable.
     } finally {
       setLoadingMetrics(false);
     }
@@ -80,8 +90,9 @@ export const App: React.FC = () => {
         <LoginView
           onLoginSuccess={(user) => {
             setCurrentUser(user);
-            fetchCatalogs();
-            fetchDashboard();
+            if (user.facilityId) {
+              setFacility((current) => ({ ...current, id: user.facilityId ?? LOCAL_FACILITY_ID }));
+            }
           }}
         />
       </main>

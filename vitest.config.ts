@@ -8,6 +8,16 @@ export default defineConfig({
     include: ["tests/unit/**/*.test.{ts,tsx}"],
     coverage: {
       provider: "v8",
+      include: [
+        "src/client/utils/**/*.ts",
+        "src/client/App.tsx",
+        "src/client/components/LoginView.tsx",
+        "src/core/rules/**/*.ts",
+        "src/core/types/schema.ts",
+        "src/server/middleware/auth.ts",
+        "src/server/services/allocation-service.ts",
+      ],
+      reportsDirectory: "./coverage/unit",
       reporter: ["text", "json", "html"],
       thresholds: {
         lines: 85,
@@ -20,9 +30,6 @@ export default defineConfig({
         "dist/",
         ".wrangler/",
         "tests/",
-        "src/server/db/schema.ts",
-        "src/client/components/**",
-        "src/client/App.tsx",
         "src/client/main.tsx",
         ".specify/",
         "specs/",

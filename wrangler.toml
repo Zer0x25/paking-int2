@@ -5,7 +5,6 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "development"
-JWT_SECRET = "supersecret_jwt_key_local_development"
 
 [[d1_databases]]
 binding = "PARKING_DB"

@@ -19,3 +19,4 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | [ADR-011](ADR-011-compact-header-controls.md) | Botón único de tema e indicador compacto de sincronización | Aceptado | 2026-10-17 |
 | [ADR-012](ADR-012-guided-gate-entry.md) | Flujo guiado de operación de garita | Aceptado | 2026-10-17 |
 | [ADR-013](ADR-013-secure-uuid-fallback.md) | Respaldo seguro para generar UUID en navegador | Aceptado | 2026-10-17 |
+| [ADR-014](ADR-014-d1-persistence-and-auth-bootstrap.md) | Persistencia D1 local y bootstrap seguro de cuentas | Aceptado | 2026-10-17 |

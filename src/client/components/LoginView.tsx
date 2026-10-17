@@ -69,7 +69,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               id="login-username"
               type="text"
               className="form-input"
-              placeholder="admin / operador"
+              placeholder="Usuario local"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -116,29 +116,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </div>
         )}
 
-        <div style={{ marginTop: "2rem", borderTop: "1px solid var(--border-subtle)", paddingTop: "1.5rem" }}>
-          <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center", marginBottom: "0.75rem" }}>
-            Acceso Rápido para Demostración:
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-            <button
-              type="button"
-              onClick={() => performLogin("admin", "admin123")}
-              className="btn btn-secondary"
-              style={{ fontSize: "0.8rem", padding: "0.5rem" }}
-            >
-              👑 Administrador
-            </button>
-            <button
-              type="button"
-              onClick={() => performLogin("operador", "operador123")}
-              className="btn btn-secondary"
-              style={{ fontSize: "0.8rem", padding: "0.5rem" }}
-            >
-              🚗 Operador Garita
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

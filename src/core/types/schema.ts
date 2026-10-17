@@ -220,7 +220,6 @@ export type UserRole = z.infer<typeof UserRoleEnum>;
 export const UserSchema = z.object({
   id: z.string().min(1),
   username: z.string().min(3),
-  passwordHash: z.string(),
   fullName: z.string().min(1),
   role: UserRoleEnum,
   facilityId: z.string().min(1).optional().nullable(),
@@ -232,6 +231,7 @@ export type User = z.infer<typeof UserSchema>;
 export const AuditLogSchema = z.object({
   id: z.string().min(1),
   userId: z.string(),
+  facilityId: z.string().min(1),
   action: z.string(),
   entityType: z.string(),
   entityId: z.string(),
