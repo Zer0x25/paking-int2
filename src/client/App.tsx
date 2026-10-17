@@ -5,6 +5,7 @@ import { VehicleExitForm } from "./components/VehicleExitForm";
 import { OperationalDashboard } from "./components/OperationalDashboard";
 import { FacilityConfigView } from "./components/FacilityConfigView";
 import { LoginView } from "./components/LoginView";
+import { getOperationalViewSections, type ApplicationTab } from "./utils/operational-view";
 import type { Facility, BusinessUnit, SpaceCategory, EventBooking, DashboardMetrics, User, ParkingArea } from "@core/types/schema";
 import { defaultFacility, defaultBusinessUnits, defaultEvents } from "@server/services/allocation-service";
 
@@ -14,7 +15,8 @@ export const App: React.FC = () => {
     return cached ? JSON.parse(cached) : null;
   });
 
-  const [activeTab, setActiveTab] = useState<"garita" | "dashboard" | "config">("garita");
+  const [activeTab, setActiveTab] = useState<ApplicationTab>("garita");
+  const visibleSections = getOperationalViewSections(activeTab);
   const [facility, setFacility] = useState<Facility>(defaultFacility);
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>(defaultBusinessUnits);
   const [spaceCategories, setSpaceCategories] = useState<SpaceCategory[]>([
@@ -153,7 +155,7 @@ export const App: React.FC = () => {
         <SyncStatusBar facilityId={facility.id} onSyncCompleted={fetchDashboard} />
 
         {/* Tab Views */}
-        {activeTab === "garita" && (
+        {visibleSections.includes("vehicle-entry") && visibleSections.includes("vehicle-exit") && (
           <section>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
               <VehicleEntryForm
@@ -166,19 +168,16 @@ export const App: React.FC = () => {
               <VehicleExitForm facilityId={facility.id} onExitSuccess={fetchDashboard} />
             </div>
 
-            <div style={{ marginTop: "2.5rem" }}>
-              <OperationalDashboard metrics={dashboardMetrics} loading={loadingMetrics} />
-            </div>
           </section>
         )}
 
-        {activeTab === "dashboard" && (
+        {visibleSections.includes("dashboard") && (
           <section>
             <OperationalDashboard metrics={dashboardMetrics} loading={loadingMetrics} />
           </section>
         )}
 
-        {activeTab === "config" && (
+        {visibleSections.includes("config") && currentUser.role === "admin" && (
           <section>
             <FacilityConfigView
               facility={facility}
