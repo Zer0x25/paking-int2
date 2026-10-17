@@ -57,6 +57,22 @@ export const UpdateParkingAreaCapacityInputSchema = z.object({
 });
 export type UpdateParkingAreaCapacityInput = z.infer<typeof UpdateParkingAreaCapacityInputSchema>;
 
+export const UpdateParkingAreaInputSchema = z.object({
+  name: z.string().trim().min(2, "El nombre del área debe tener al menos 2 caracteres"),
+  code: z.string().trim().min(1).max(10).transform((value) => value.toUpperCase()),
+  description: z.string().trim().default(""),
+  allocatedCapacity: z.number().int().nonnegative(),
+  businessUnitId: z.string().nullable().default(null),
+  version: z.number().int().positive(),
+});
+export type UpdateParkingAreaInput = z.infer<typeof UpdateParkingAreaInputSchema>;
+
+export const DeactivateParkingAreaInputSchema = z.object({
+  isActive: z.literal(false),
+  version: z.number().int().positive(),
+});
+export type DeactivateParkingAreaInput = z.infer<typeof DeactivateParkingAreaInputSchema>;
+
 export const ParkingAreaMetricsSchema = z.object({
   areaId: z.string().min(1),
   name: z.string(),
@@ -93,24 +109,83 @@ export const BusinessUnitSchema = z.object({
   quotaType: QuotaTypeEnum,
   defaultQuota: z.number().int().nonnegative().default(0),
   isActive: z.boolean().default(true),
+  version: z.number().int().positive().default(1),
 });
 export type BusinessUnit = z.infer<typeof BusinessUnitSchema>;
+
+const BusinessUnitEditableFieldsSchema = z.object({
+  name: z.string().trim().min(1, "El nombre de la unidad es obligatorio").max(80),
+  code: z.string().trim().min(1, "El código es obligatorio").max(10).transform((value) => value.toUpperCase()),
+  quotaType: QuotaTypeEnum,
+  defaultQuota: z.number().int().nonnegative("Los cupos base deben ser un entero no negativo"),
+});
+
+export const CreateBusinessUnitInputSchema = BusinessUnitEditableFieldsSchema;
+export type CreateBusinessUnitInput = z.infer<typeof CreateBusinessUnitInputSchema>;
+
+export const UpdateBusinessUnitInputSchema = BusinessUnitEditableFieldsSchema.extend({
+  version: z.number().int().positive(),
+});
+export type UpdateBusinessUnitInput = z.infer<typeof UpdateBusinessUnitInputSchema>;
+
+export const DeactivateBusinessUnitInputSchema = z.object({
+  isActive: z.literal(false),
+  version: z.number().int().positive(),
+});
+export type DeactivateBusinessUnitInput = z.infer<typeof DeactivateBusinessUnitInputSchema>;
 
 // --- Event Booking ---
 export const EventStatusEnum = z.enum(["scheduled", "active", "completed", "cancelled"]);
 export type EventStatus = z.infer<typeof EventStatusEnum>;
 
-export const EventBookingSchema = z.object({
+const EventBookingFieldsSchema = z.object({
   id: z.string().min(1),
   facilityId: z.string().min(1),
   businessUnitId: z.string().min(1),
-  title: z.string().min(1),
+  title: z.string().trim().min(2).max(120),
   reservedSlots: z.number().int().positive(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   status: EventStatusEnum.default("scheduled"),
+  version: z.number().int().positive().default(1),
 });
+
+const EventBookingTimeRange = {
+  message: "La fecha y hora de término debe ser posterior al inicio",
+  path: ["endTime"] as ["endTime"],
+};
+
+export const EventBookingSchema = EventBookingFieldsSchema.refine(
+  (event) => Date.parse(event.endTime) > Date.parse(event.startTime),
+  EventBookingTimeRange,
+);
 export type EventBooking = z.infer<typeof EventBookingSchema>;
+
+export const CreateEventBookingInputSchema = z.object({
+  title: EventBookingFieldsSchema.shape.title,
+  businessUnitId: EventBookingFieldsSchema.shape.businessUnitId,
+  reservedSlots: EventBookingFieldsSchema.shape.reservedSlots,
+  startTime: EventBookingFieldsSchema.shape.startTime,
+  endTime: EventBookingFieldsSchema.shape.endTime,
+}).refine(
+  (event) => Date.parse(event.endTime) > Date.parse(event.startTime),
+  EventBookingTimeRange,
+);
+export type CreateEventBookingInput = z.infer<typeof CreateEventBookingInputSchema>;
+
+export const UpdateEventBookingInputSchema = CreateEventBookingInputSchema.innerType().extend({
+  version: z.number().int().positive(),
+}).refine(
+  (event) => Date.parse(event.endTime) > Date.parse(event.startTime),
+  EventBookingTimeRange,
+);
+export type UpdateEventBookingInput = z.infer<typeof UpdateEventBookingInputSchema>;
+
+export const CancelEventBookingInputSchema = z.object({
+  status: z.literal("cancelled"),
+  version: z.number().int().positive(),
+});
+export type CancelEventBookingInput = z.infer<typeof CancelEventBookingInputSchema>;
 
 // --- Parking Session ---
 export const SessionStatusEnum = z.enum(["active", "completed"]);

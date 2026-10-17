@@ -153,6 +153,131 @@ export function reallocateAreaCapacity(params: ReallocateCapacityParams): Parkin
   };
 }
 
+export interface UpdateParkingAreaParams {
+  areaId: string;
+  name: string;
+  code: string;
+  description: string;
+  allocatedCapacity: number;
+  businessUnitId: string | null;
+  areas: ParkingArea[];
+  facilityTotalCapacity: number;
+  activeOccupancy: number;
+  expectedVersion: number;
+}
+
+export function updateParkingArea(params: UpdateParkingAreaParams): ParkingArea {
+  const {
+    areaId,
+    name,
+    code,
+    description,
+    allocatedCapacity,
+    businessUnitId,
+    areas,
+    facilityTotalCapacity,
+    activeOccupancy,
+    expectedVersion,
+  } = params;
+  const areaIndex = areas.findIndex((area) => area.id === areaId);
+  if (areaIndex === -1) {
+    throw new Error(`Área con ID "${areaId}" no encontrada`);
+  }
+
+  const targetArea = areas[areaIndex];
+  if (!targetArea.isActive) {
+    throw new Error("No se puede editar un área inactiva");
+  }
+  if (targetArea.version !== expectedVersion) {
+    throw new Error(
+      `Conflicto de concurrencia optimista: la versión esperada era ${expectedVersion} pero el área se encuentra en la versión ${targetArea.version}`
+    );
+  }
+
+  const normalizedName = name.trim();
+  const normalizedCode = code.trim().toUpperCase();
+  if (normalizedName.length < 2) {
+    throw new Error("El nombre del área debe tener al menos 2 caracteres");
+  }
+  if (normalizedCode.length < 1 || normalizedCode.length > 10) {
+    throw new Error("El código del área debe tener entre 1 y 10 caracteres");
+  }
+  if (
+    areas.some(
+      (area) =>
+        area.id !== areaId &&
+        area.facilityId === targetArea.facilityId &&
+        area.code.trim().toUpperCase() === normalizedCode
+    )
+  ) {
+    throw new Error(`El código de área "${normalizedCode}" ya existe en esta instalación`);
+  }
+  if (!Number.isInteger(allocatedCapacity) || allocatedCapacity < 0) {
+    throw new Error("La nueva capacidad debe ser un número entero mayor o igual a 0");
+  }
+  if (allocatedCapacity < activeOccupancy) {
+    throw new Error(
+      `No es posible reducir la capacidad a ${allocatedCapacity}: hay ${activeOccupancy} vehículos actualmente estacionados en esta área`
+    );
+  }
+
+  const otherAreasAllocated = areas
+    .filter((area) => area.id !== areaId && area.isActive)
+    .reduce((sum, area) => sum + area.allocatedCapacity, 0);
+  if (otherAreasAllocated + allocatedCapacity > facilityTotalCapacity) {
+    const maxAllowed = facilityTotalCapacity - otherAreasAllocated;
+    throw new Error(
+      `La nueva capacidad (${allocatedCapacity}) superaría la capacidad total de la instalación (${facilityTotalCapacity}). Máximo permitido para esta área: ${maxAllowed}`
+    );
+  }
+
+  return {
+    ...targetArea,
+    name: normalizedName,
+    code: normalizedCode,
+    description: description.trim(),
+    allocatedCapacity,
+    businessUnitId: businessUnitId || null,
+    version: targetArea.version + 1,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export interface DeactivateParkingAreaParams {
+  areaId: string;
+  areas: ParkingArea[];
+  activeOccupancy: number;
+  expectedVersion: number;
+}
+
+export function deactivateParkingArea(params: DeactivateParkingAreaParams): ParkingArea {
+  const { areaId, areas, activeOccupancy, expectedVersion } = params;
+  const targetArea = areas.find((area) => area.id === areaId);
+  if (!targetArea) {
+    throw new Error(`Área con ID "${areaId}" no encontrada`);
+  }
+  if (targetArea.version !== expectedVersion) {
+    throw new Error(
+      `Conflicto de concurrencia optimista: la versión esperada era ${expectedVersion} pero el área se encuentra en la versión ${targetArea.version}`
+    );
+  }
+  if (!targetArea.isActive) {
+    throw new Error("El área ya se encuentra inactiva");
+  }
+  if (activeOccupancy > 0) {
+    throw new Error(
+      `No se puede desactivar el área: hay ${activeOccupancy} vehículo${activeOccupancy === 1 ? "" : "s"} actualmente estacionado${activeOccupancy === 1 ? "" : "s"}`
+    );
+  }
+
+  return {
+    ...targetArea,
+    isActive: false,
+    version: targetArea.version + 1,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Calcula las métricas de disponibilidad de un área específica a partir de las sesiones activas.
  */

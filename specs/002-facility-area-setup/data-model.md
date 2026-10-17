@@ -44,6 +44,23 @@ Representa una estadía vehicular en curso o finalizada. Se amplía para captura
 |---|---|---|---|
 | `parkingAreaId` | `string \| null` | Opcional, referencia a `ParkingArea.id` | Área física donde se estacionó el vehículo |
 
+### Entidad: `EventBooking` (Reserva Contractual de Evento)
+Representa los cupos comprometidos para una unidad contractual durante un rango de fecha y hora.
+
+| Campo | Tipo | Restricciones / Reglas | Descripción |
+|---|---|---|---|
+| `id` | `string` | Obligatorio, único | Identificador de reserva |
+| `facilityId` | `string` | Obligatorio, referencia a `Facility.id` | Recinto de la reserva |
+| `businessUnitId` | `string` | Obligatorio, referencia a unidad contractual | Unidad de negocio responsable |
+| `title` | `string` | Obligatorio, 2 a 120 caracteres | Nombre del evento |
+| `reservedSlots` | `number` (int) | Entero positivo y no mayor a la capacidad total | Cupos comprometidos |
+| `startTime` | `string` (ISO 8601) | Obligatorio | Fecha y hora de inicio serializada como instante |
+| `endTime` | `string` (ISO 8601) | Obligatorio, posterior a `startTime` | Fecha y hora de término, incluso si cae al día siguiente |
+| `status` | `scheduled \| active \| completed \| cancelled` | Estado válido; cancelar es lógico | Vigencia de la reserva |
+| `version` | `number` (int) | Positivo, incrementa con cada edición o cancelación | Concurrencia optimista |
+
+Las fechas se interpretan en la zona horaria local de la instalación. Si `endTime` termina en la fecha D, la reserva se muestra en el inventario administrativo hasta las 23:59 de D+1 y se oculta al comenzar D+2. La reserva permanece conservada como registro histórico.
+
 ---
 
 ## 2. Invariantes del Dominio y Reglas de Negocio
@@ -61,6 +78,9 @@ Si $K_{\text{nueva}} < \text{OcupaciónActiva}(a)$, el motor de dominio rechaza 
 
 ### Invariante 3: Integridad de Asignación por Exclusividad
 Si un área $a$ tiene `businessUnitId = BU_1`, un vehículo con destino a `BU_2` no puede ser asignado a dicha área.
+
+### Invariante 4: Compromisos Contractuales de Capacidad
+En cada instante, las cuotas garantizadas y los cupos de reservas de eventos no canceladas que cubren ese instante no pueden superar la capacidad física total de la instalación. Las reservas futuras se listan desde su creación, pero solo afectan la asignación vehicular durante su intervalo programado.
 
 ---
 

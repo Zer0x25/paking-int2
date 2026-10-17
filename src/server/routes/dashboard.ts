@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { computeDashboardMetrics } from "@core/rules/dashboard-calculator";
-import { defaultFacility, defaultBusinessUnits } from "../services/allocation-service";
+import { defaultFacility, businessUnitsStore } from "../services/allocation-service";
 import { mockSessionsRepo } from "./parking";
 import { parkingAreasStore } from "./facilities";
 
@@ -15,7 +15,9 @@ dashboardRoutes.get("/:id/dashboard", (c) => {
 
   const metrics = computeDashboardMetrics({
     facility,
-    businessUnits: defaultBusinessUnits,
+    businessUnits: businessUnitsStore.filter(
+      (unit) => unit.isActive && (unit.facilityId === facilityId || unit.facilityId === defaultFacility.id),
+    ),
     activeSessions: mockSessionsRepo.filter((s) => s.facilityId === facilityId),
     areas: parkingAreasStore.filter((a) => a.facilityId === facilityId && a.isActive),
   });

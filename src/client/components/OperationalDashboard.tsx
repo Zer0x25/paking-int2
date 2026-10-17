@@ -1,5 +1,6 @@
 import React from "react";
 import type { DashboardMetrics } from "@core/types/schema";
+import { getDashboardRenderState } from "../utils/dashboard-render-state";
 
 interface OperationalDashboardProps {
   metrics: DashboardMetrics | null;
@@ -7,13 +8,19 @@ interface OperationalDashboardProps {
 }
 
 export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metrics, loading }) => {
-  if (loading || !metrics) {
+  const renderState = getDashboardRenderState(metrics !== null, Boolean(loading));
+
+  if (renderState !== "content") {
     return (
       <div className="glass-panel" style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>
-        Cargando indicadores de ocupación en tiempo real...
+        {renderState === "loading"
+          ? "Cargando indicadores de ocupación en tiempo real..."
+          : "No hay indicadores disponibles. Reintentando automáticamente..."}
       </div>
     );
   }
+
+  if (!metrics) return null;
 
   const getAlertBadge = (level: "normal" | "warning" | "critical") => {
     switch (level) {

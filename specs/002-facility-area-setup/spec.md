@@ -1,8 +1,8 @@
-# Feature Specification: Construcción de Instalaciones, Gestión de Áreas y Asignación Dinámica de Capacidad
+# Feature Specification: Instalaciones, Áreas y Reservas de Eventos
 
 **Feature Branch**: `002-facility-area-setup`  
 **Created**: 2026-10-15  
-**Status**: Draft  
+**Status**: Approved
 **Input**: Capacidad de construir la instalación, asignar la cantidad total de estacionamientos, crear las áreas de aparcamiento y definir la cantidad de plazas por área con capacidad de reajuste dinámico en caliente.
 
 ## Clarifications
@@ -12,6 +12,10 @@
 - Q: ¿Cómo se vinculan las áreas físicas de estacionamiento con las Unidades de Negocio? → A: Modelo flexible: las áreas pueden ser de uso compartido (abiertas a múltiples unidades de negocio) o reservadas exclusivamente para una unidad específica (ej. Zona Exclusiva Hotel).
 - Q: ¿Qué regla de integridad rige si la suma de capacidades de las áreas no coincide con la capacidad total de la instalación? → A: Se permite que la sumatoria de plazas de las áreas sea menor o igual al total del recinto (las plazas no asignadas a un área específica quedan como 'Reserva Flotante / Buffer General' del complejo); se bloquea si la suma supera la capacidad física total.
 - Q: ¿Qué comportamiento debe tener el sistema si se intenta reducir la capacidad de un área por debajo de los vehículos actualmente estacionados? → A: Bloqueo estricto: el sistema rechaza la reducción y exige que la nueva capacidad sea mayor o igual a los vehículos que se encuentran actualmente aparcados en dicha área.
+
+### Session 2026-10-17
+- Q: ¿Qué campos debe poder editar el administrador en un área existente? → A: Nombre, código, descripción, régimen de uso y capacidad desde un formulario.
+- Q: Si el rango de un evento termina el día 17, ¿hasta cuándo debe aparecer la reserva en la lista activa? → A: Debe permanecer visible hasta las 23:59 del día siguiente (día 18) y ocultarse al comenzar el día 19.
 
 ---
 
@@ -75,6 +79,21 @@ Como operador de acceso o supervisor en tiempo real, necesito ver el estado de o
 2. **Given** un área que ha alcanzado el 100% de su capacidad dinámica asignada, **When** el operador intenta asignar un vehículo a esa área específica, **Then** el sistema advierte que el área está completa y sugiere un área alternativa con disponibilidad.
 3. **Given** el dashboard operativo central, **When** ocurren ingresos o salidas, **Then** se presenta una sección visual con tarjetas o medidores de ocupación por cada área física configurada.
 
+### User Story 5 - Gestión de Eventos y Reservas Contractuales (Priority: P2)
+
+Como administrador, necesito crear cualquier cantidad de reservas contractuales de estacionamiento para eventos con anticipación, editar sus datos y cancelarlas, para comprometer cupos durante un rango específico de fechas y horarios.
+
+**Why this priority**: Las reservas para eventos deben poder programarse con anticipación y ajustarse sin editar datos estáticos; su vigencia define cuándo se protegen los cupos de la unidad de Eventos.
+
+**Independent Test**: Crear dos reservas para fechas distintas, editar una, cancelar la otra y comprobar que los cupos comprometidos respetan la capacidad física cuando los rangos coinciden; comprobar también que una reserva deja la lista activa al vencer.
+
+**Acceptance Scenarios**:
+1. **Given** un administrador en Configuración, **When** registra el nombre del evento, unidad de negocio, cupos, fecha y hora de inicio y término, **Then** la reserva aparece en la lista aunque su inicio sea futuro y puede crearse cualquier número de reservas mientras cumplan las reglas de capacidad.
+2. **Given** reservas de eventos que coinciden total o parcialmente en su rango de fecha y hora, **When** el administrador crea o edita otra reserva, **Then** el sistema impide que los cupos garantizados y las reservas simultáneas superen la capacidad física total del recinto.
+3. **Given** una reserva futura o vigente, **When** el administrador edita sus datos o la elimina, **Then** los cambios se reflejan en la lista; eliminarla la cancela y conserva el registro histórico.
+4. **Given** una reserva cuyo rango termina el día 17, **When** transcurre el día 18 en la zona horaria local de la instalación, **Then** permanece en la lista hasta las 23:59 del día 18 y desaparece al comenzar el día 19, sin borrar el registro histórico.
+5. **Given** una reserva programada, **When** un operador admite vehículos, **Then** sus cupos contractuales afectan la disponibilidad solo durante el rango de fecha y hora del evento.
+
 ---
 
 ### Edge Cases
@@ -83,6 +102,10 @@ Como operador de acceso o supervisor en tiempo real, necesito ver el estado de o
 - **Intento de sobreasignación**: Si la suma de las capacidades asignadas a las áreas supera la capacidad total de la instalación, el sistema debe bloquear el guardado indicando el excedente exacto de plazas.
 - **Cambio de capacidad durante ingreso simultáneo**: Si dos administradores o un proceso automatizado reajustan la capacidad de un área mientras ingresan vehículos, la persistencia atómica con control de concurrencia optimista (versioning) previene estados inconsistentes.
 - **Operación offline de áreas**: Si se crean o reajustan áreas en modo offline en la terminal del administrador, las garitas locales operan con la última configuración cacheada en IndexedDB hasta que se sincronice el delta.
+- **Rango nocturno de evento**: Una reserva puede comenzar un día y terminar al día siguiente; el término debe ser posterior al inicio y el día posterior a la fecha final se conserva como gracia para la lista administrativa.
+- **Reservas simultáneas**: Las reservas no pueden comprometer más cupos que la capacidad del recinto una vez sumadas las cuotas garantizadas vigentes en los mismos instantes.
+- **Eliminación de una reserva**: Eliminar equivale a cancelarla; se oculta inmediatamente de la lista activa y se conserva para referencia histórica.
+- **Vencimiento de una reserva**: Al finalizar el día calendario posterior a la fecha final, la reserva desaparece de la lista activa pero permanece almacenada.
 
 ---
 
@@ -92,7 +115,7 @@ Como operador de acceso o supervisor en tiempo real, necesito ver el estado de o
 
 - **FR-001**: El sistema DEBE permitir a los administradores crear, consultar, modificar y desactivar instalaciones físicas con nombre, dirección y capacidad total de plazas.
 - **FR-002**: El sistema DEBE garantizar que la capacidad total de una instalación sea un número entero estrictamente positivo (> 0).
-- **FR-003**: El sistema DEBE permitir la creación de múltiples áreas o sectores físicos asociados a una instalación, cada una con nombre, código alfanumérico único por recinto y estado activo.
+- **FR-003**: El sistema DEBE permitir crear y editar áreas o sectores físicos asociados a una instalación, incluyendo nombre, código alfanumérico único por recinto, descripción y régimen de uso (compartido o asignado a una unidad de negocio), manteniendo su estado activo.
 - **FR-004**: El sistema DEBE permitir asignar y modificar dinámicamente la capacidad de plazas de cada área individual en tiempo de ejecución.
 - **FR-005**: El sistema DEBE validar que la sumatoria de las capacidades de todas las áreas activas no sobrepase la capacidad total configurada en la instalación.
 - **FR-006**: El sistema DEBE impedir que la capacidad de un área se reduzca por debajo del número de vehículos que se encuentran físicamente estacionados en ella en ese momento.
@@ -101,6 +124,14 @@ Como operador de acceso o supervisor en tiempo real, necesito ver el estado de o
 - **FR-009**: El sistema DEBE reflejar en el dashboard operativo la disponibilidad y porcentaje de ocupación en tiempo real por cada área física.
 - **FR-010**: El sistema DEBE persistir las instalaciones y áreas en IndexedDB local con soporte offline-first y sincronización incremental hacia Cloudflare D1 en el backend.
 - **FR-011**: El sistema DEBE registrar en la bitácora de auditoría todo cambio de capacidad de la instalación o de sus áreas, incluyendo usuario responsable y marca de tiempo.
+- **FR-012**: El sistema DEBE permitir eliminar un área vacía tras confirmación explícita, conservando su registro histórico y liberando su capacidad al buffer; debe bloquear la operación si el área mantiene vehículos activos y excluir áreas inactivas de los catálogos operativos.
+- **FR-013**: El sistema DEBE permitir que un administrador cree y consulte múltiples reservas contractuales de eventos sin un límite arbitrario de registros.
+- **FR-014**: Cada reserva DEBE incluir nombre de evento, unidad de negocio contractual, cupos, fecha y hora de inicio y fecha y hora de término; el término debe ser posterior al inicio y se permiten rangos que crucen medianoche.
+- **FR-015**: El sistema DEBE permitir editar una reserva o cancelarla mediante eliminación confirmada, ocultando las reservas canceladas de la lista activa y conservando su registro histórico.
+- **FR-016**: La lista administrativa DEBE incluir reservas próximas, vigentes y dentro del día calendario de gracia posterior a su fecha de término; debe ocultarlas al comenzar el día siguiente a dicho día de gracia, según la zona horaria local de la instalación.
+- **FR-017**: El sistema DEBE impedir que los compromisos simultáneos por cuotas garantizadas y reservas de eventos superen la capacidad física total de la instalación.
+- **FR-018**: Los cupos contractuales de un evento DEBEN influir en la disponibilidad operativa únicamente durante su intervalo programado de fecha y hora.
+- **FR-019**: Las creaciones, ediciones y cancelaciones de reservas DEBEN conservar el historial de cambios en el registro de auditoría.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -126,6 +157,14 @@ Como operador de acceso o supervisor en tiempo real, necesito ver el estado de o
 - **ParkingSession (Ampliación)**:
   - `parkingAreaId`: Referencia opcional al área física donde aparcó el vehículo.
 
+- **EventBooking (Reserva de Evento)**:
+  - `id`, `facilityId`, `businessUnitId`: Identidad y referencias al recinto y a la unidad contractual.
+  - `title`: Nombre obligatorio del evento.
+  - `reservedSlots`: Cupos positivos comprometidos por la reserva.
+  - `startTime`, `endTime`: Marcas ISO 8601 que representan el rango inclusivo de fecha y hora; `endTime` debe ser posterior a `startTime`.
+  - `status`: Estado de reserva; cancelar la reserva la excluye de compromisos futuros y de la lista activa sin borrar el historial.
+  - `version`: Versión entera para evitar sobrescribir una edición más reciente.
+
 ---
 
 ## Success Criteria *(mandatory)*
@@ -137,6 +176,9 @@ Como operador de acceso o supervisor en tiempo real, necesito ver el estado de o
 - **SC-003**: El 100% de los intentos de sobreasignación (donde la suma de áreas supere la capacidad del recinto o la reducción sea inferior a los vehículos aparcados) son prevenidos y alertados claramente antes de persistir.
 - **SC-004**: Los operadores en garita pueden visualizar y seleccionar el área física asignada en el flujo de ingreso en un solo clic adicional sin aumentar el tiempo total de registro por encima de 2 segundos.
 - **SC-005**: La totalidad de operaciones de configuración de áreas e instalaciones opera fluidamente en modo offline con persistencia en IndexedDB y resolución de conflictos al reconectar.
+- **SC-006**: Un administrador puede completar la creación, edición o cancelación de una reserva desde Configuración en menos de 60 segundos.
+- **SC-007**: El 100% de las reservas cuya fecha final ya excedió el día calendario de gracia desaparece de la lista activa y conserva su registro histórico.
+- **SC-008**: El 100% de los intentos de comprometer cupos simultáneos por encima de la capacidad física se bloquea antes de guardar.
 
 ---
 
@@ -144,4 +186,8 @@ Como operador de acceso o supervisor en tiempo real, necesito ver el estado de o
 
 - Cada área pertenece exactamente a una instalación.
 - La suma de capacidades de áreas no necesita ser exactamente igual al total; la diferencia representa plazas de reserva libre no sectorizadas.
+- La eliminación de áreas se realiza como baja lógica para conservar referencias históricas a sesiones y auditoría.
+- No existe un límite artificial al número de reservas; la capacidad comprometida en los intervalos coincidentes es el límite efectivo.
+- La eliminación de reservas es una cancelación lógica para conservar auditoría e historia.
+- Las fechas se interpretan en la zona horaria local de la instalación; un rango terminado el día D se mantiene visible durante todo el día D+1 y se oculta al comenzar D+2.
 - Se reutiliza la arquitectura existente de autenticación (roles Admin y Operador) y la infraestructura de sincronización offline con IndexedDB y Cloudflare Workers / D1.

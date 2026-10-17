@@ -17,6 +17,7 @@ export default defineConfig({
       exclude: [
         "node_modules/",
         "dist/",
+        ".wrangler/",
         "tests/",
         "src/server/db/schema.ts",
         "src/client/components/**",

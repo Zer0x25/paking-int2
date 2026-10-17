@@ -29,6 +29,7 @@ describe("User Story 2: Dynamic Quota Allocation Engine (TDD)", () => {
     quotaType: "guaranteed",
     defaultQuota: 40,
     isActive: true,
+    version: 1,
   };
 
   const eventUnit: BusinessUnit = {
@@ -40,6 +41,7 @@ describe("User Story 2: Dynamic Quota Allocation Engine (TDD)", () => {
     quotaType: "contractual",
     defaultQuota: 0,
     isActive: true,
+    version: 1,
   };
 
   const restaurantUnit: BusinessUnit = {
@@ -51,6 +53,7 @@ describe("User Story 2: Dynamic Quota Allocation Engine (TDD)", () => {
     quotaType: "dynamic",
     defaultQuota: 0,
     isActive: true,
+    version: 1,
   };
 
   const activeEvent: EventBooking = {
@@ -62,6 +65,7 @@ describe("User Story 2: Dynamic Quota Allocation Engine (TDD)", () => {
     startTime: "2026-10-15T14:00:00Z",
     endTime: "2026-10-15T20:00:00Z",
     status: "active",
+    version: 1,
   };
 
   it("should calculate correct availability protecting hotel and event quotas", () => {
@@ -233,6 +237,7 @@ describe("User Story 2: Dynamic Quota Allocation Engine (TDD)", () => {
       quotaType: "dynamic",
       defaultQuota: 0,
       isActive: true,
+      version: 1,
     };
 
     const result = canAdmitVehicle({

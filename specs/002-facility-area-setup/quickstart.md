@@ -45,10 +45,29 @@
 
 ---
 
-## 5. Ejecución Automatizada de Pruebas
+## 5. Escenario 5: Edición, eliminación lógica y refresco del dashboard
+1. En Configuración de Instalación, elegir **Editar** en un área y actualizar nombre, código, descripción, régimen de uso o capacidad.
+2. Guardar y verificar los valores actualizados; un código duplicado, una capacidad menor que la ocupación o una versión antigua deben mostrar un error sin perder los datos del formulario.
+3. Elegir **Eliminar** en un área vacía y confirmar. El área debe pasar a la lista de inactivas, desaparecer de los catálogos operativos y liberar su capacidad al buffer.
+4. Verificar que el botón no permita eliminar un área ocupada y que la API rechace la operación si la ocupación cambió después de cargar la vista.
+5. En Dashboard, desplazarse hacia abajo y esperar al menos un ciclo de actualización automática. Las tarjetas y la posición de desplazamiento deben permanecer estables mientras llegan nuevas métricas.
+
+---
+
+## 6. Escenario 6: Reservas de eventos con rango de fechas
+1. En Configuración, crear dos reservas para la unidad Eventos con nombre, cupos, fecha/hora de inicio y fecha/hora de término; una de ellas debe cruzar medianoche.
+2. Confirmar que ambas aparecen ordenadas por fecha, incluyendo las futuras, y que no existe un límite fijo de reservas.
+3. Editar una reserva y confirmar que nombre, cupos y rango actualizados aparecen en la lista.
+4. Cancelar la otra y confirmar que desaparece de la lista activa mientras su registro sigue conservado.
+5. Intentar una reserva que exceda la capacidad disponible durante un intervalo coincidente y confirmar que se rechaza sin cambiar la lista.
+6. Verificar con pruebas de reloj controlado que una reserva cuyo término es el día 17 permanece visible durante el día 18 y desaparece desde las 00:00 del 19.
+
+---
+
+## 7. Ejecución Automatizada de Pruebas
 ```bash
 # Ejecución de pruebas unitarias y de integración del motor de áreas
-npm run test:run -- tests/unit/core/test_area_allocation.test.ts tests/unit/server/test_area_api.test.ts
+npm test -- tests/unit/core/test_area_allocation.test.ts tests/unit/server/test_area_api.test.ts
 
 # Verificación de TypeScript
 npm run typecheck

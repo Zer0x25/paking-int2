@@ -22,6 +22,7 @@ describe("User Story 3: Dashboard Metrics & Alert Thresholds (TDD)", () => {
       quotaType: "guaranteed",
       defaultQuota: 50,
       isActive: true,
+      version: 1,
     },
     {
       id: "bu-rest",
@@ -32,6 +33,7 @@ describe("User Story 3: Dashboard Metrics & Alert Thresholds (TDD)", () => {
       quotaType: "dynamic",
       defaultQuota: 0,
       isActive: true,
+      version: 1,
     },
   ];
 

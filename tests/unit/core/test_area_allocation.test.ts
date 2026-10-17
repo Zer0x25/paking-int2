@@ -4,6 +4,8 @@ import {
   calculateFacilityBuffer,
   createParkingArea,
   reallocateAreaCapacity,
+  updateParkingArea,
+  deactivateParkingArea,
   calculateAreaAvailability,
   canAdmitVehicleToArea,
 } from "@core/rules/areaAllocationRules";
@@ -308,5 +310,95 @@ describe("TDD Feature 002: Construcción de Instalaciones, Áreas y Asignación 
       ).toThrow(/mayor o igual a 0/i);
     });
   });
-});
 
+  describe("Convergencia: edición y baja lógica de áreas", () => {
+    it("debe actualizar todos los datos editables y normalizar el código", () => {
+      const updated = updateParkingArea({
+        areaId: "area-sub-1",
+        name: "Subsuelo Remodelado",
+        code: "sub-nuevo",
+        description: "Acceso por rampa norte",
+        allocatedCapacity: 45,
+        businessUnitId: "bu-hotel",
+        areas: sampleAreas,
+        facilityTotalCapacity: facility.totalCapacity,
+        activeOccupancy: 15,
+        expectedVersion: 1,
+      });
+
+      expect(updated).toMatchObject({
+        name: "Subsuelo Remodelado",
+        code: "SUB-NUEVO",
+        description: "Acceso por rampa norte",
+        allocatedCapacity: 45,
+        businessUnitId: "bu-hotel",
+        version: 2,
+        isActive: true,
+      });
+    });
+
+    it("debe rechazar un código que ya pertenece a otra área", () => {
+      expect(() =>
+        updateParkingArea({
+          areaId: "area-sub-1",
+          name: "Subsuelo Remodelado",
+          code: "vip-hotel",
+          description: "",
+          allocatedCapacity: 40,
+          businessUnitId: null,
+          areas: sampleAreas,
+          facilityTotalCapacity: facility.totalCapacity,
+          activeOccupancy: 0,
+          expectedVersion: 1,
+        })
+      ).toThrow(/código .* ya existe/i);
+    });
+
+    it("debe proteger ocupación, capacidad total y versión al editar", () => {
+      const params = {
+        areaId: "area-sub-1",
+        name: "Subsuelo Remodelado",
+        code: "SUB-1",
+        description: "",
+        allocatedCapacity: 20,
+        businessUnitId: null,
+        areas: sampleAreas,
+        facilityTotalCapacity: facility.totalCapacity,
+        activeOccupancy: 25,
+        expectedVersion: 1,
+      };
+
+      expect(() => updateParkingArea(params)).toThrow(/no es posible reducir.*25 vehículos/i);
+      expect(() => updateParkingArea({ ...params, allocatedCapacity: 80, activeOccupancy: 0 }))
+        .toThrow(/superaría la capacidad total/i);
+      expect(() => updateParkingArea({ ...params, expectedVersion: 99 }))
+        .toThrow(/concurrencia optimista/i);
+    });
+
+    it("debe desactivar un área vacía y conservar su registro con nueva versión", () => {
+      const deactivated = deactivateParkingArea({
+        areaId: "area-sub-1",
+        areas: sampleAreas,
+        activeOccupancy: 0,
+        expectedVersion: 1,
+      });
+
+      expect(deactivated.isActive).toBe(false);
+      expect(deactivated.version).toBe(2);
+      expect(sampleAreas[0].isActive).toBe(true);
+    });
+
+    it("debe bloquear la baja de áreas ocupadas o con versión obsoleta", () => {
+      const params = {
+        areaId: "area-sub-1",
+        areas: sampleAreas,
+        activeOccupancy: 1,
+        expectedVersion: 1,
+      };
+
+      expect(() => deactivateParkingArea(params)).toThrow(/no se puede desactivar.*1 vehículo/i);
+      expect(() => deactivateParkingArea({ ...params, activeOccupancy: 0, expectedVersion: 99 }))
+        .toThrow(/concurrencia optimista/i);
+    });
+  });
+});

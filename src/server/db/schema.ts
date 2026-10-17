@@ -45,6 +45,7 @@ export const eventBookings = sqliteTable("event_bookings", {
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   status: text("status").notNull().default("scheduled"),
+  version: integer("version").notNull().default(1),
 });
 
 export const parkingAreas = sqliteTable("parking_areas", {

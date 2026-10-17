@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import type { Facility, BusinessUnit, EventBooking, ParkingArea } from "@core/types/schema";
 import { calculateFacilityBuffer } from "@core/rules/areaAllocationRules";
+import { BusinessUnitManager } from "./BusinessUnitManager";
+import { EventBookingsManager } from "./EventBookingsManager";
 
 interface FacilityConfigViewProps {
   facility: Facility | null;
@@ -8,6 +10,165 @@ interface FacilityConfigViewProps {
   events: EventBooking[];
   onRefresh?: () => void;
 }
+
+interface ManagedParkingArea extends ParkingArea {
+  activeOccupancy?: number;
+  availableSlots?: number;
+  occupancyPercentage?: number;
+  isSaturated?: boolean;
+}
+
+interface AreaEditValues {
+  name: string;
+  code: string;
+  description: string;
+  allocatedCapacity: number;
+  businessUnitId: string | null;
+}
+
+interface ManagedAreaCardProps {
+  area: ManagedParkingArea;
+  businessUnits: BusinessUnit[];
+  floatingBuffer: number;
+  saving: boolean;
+  deactivating: boolean;
+  onSave: (area: ManagedParkingArea, values: AreaEditValues) => Promise<boolean>;
+  onDeactivate: (area: ManagedParkingArea) => void;
+  onQuickAdjust: (area: ManagedParkingArea, delta: number) => void;
+}
+
+const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
+  area,
+  businessUnits,
+  floatingBuffer,
+  saving,
+  deactivating,
+  onSave,
+  onDeactivate,
+  onQuickAdjust,
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(area.name);
+  const [code, setCode] = useState(area.code);
+  const [description, setDescription] = useState(area.description || "");
+  const [capacity, setCapacity] = useState(area.allocatedCapacity);
+  const [businessUnitId, setBusinessUnitId] = useState(area.businessUnitId || "");
+  const activeVehicles = area.activeOccupancy || 0;
+  const available = Math.max(0, area.allocatedCapacity - activeVehicles);
+  const pct = area.allocatedCapacity > 0 ? Math.round((activeVehicles / area.allocatedCapacity) * 100) : 0;
+  const exclusiveUnit = businessUnits.find((unit) => unit.id === area.businessUnitId)?.name;
+
+  const beginEditing = () => {
+    setName(area.name);
+    setCode(area.code);
+    setDescription(area.description || "");
+    setCapacity(area.allocatedCapacity);
+    setBusinessUnitId(area.businessUnitId || "");
+    setEditing(true);
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const saved = await onSave(area, {
+      name,
+      code,
+      description,
+      allocatedCapacity: Number(capacity),
+      businessUnitId: businessUnitId || null,
+    });
+    if (saved) setEditing(false);
+  };
+
+  const cardStyle: React.CSSProperties = {
+    background: "rgba(0, 0, 0, 0.25)",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    borderRadius: "10px",
+    padding: "1.25rem 1.5rem",
+  };
+
+  if (editing) {
+    return (
+      <form onSubmit={submit} style={cardStyle}>
+        <h5 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Editar área: {area.name}</h5>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem" }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor={`edit-area-name-${area.id}`}>Nombre del área</label>
+            <input id={`edit-area-name-${area.id}`} className="form-input" value={name} onChange={(event) => setName(event.target.value)} minLength={2} required />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor={`edit-area-code-${area.id}`}>Código único</label>
+            <input id={`edit-area-code-${area.id}`} className="form-input" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} maxLength={10} required />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor={`edit-area-capacity-${area.id}`}>Capacidad asignada</label>
+            <input id={`edit-area-capacity-${area.id}`} className="form-input" type="number" min={activeVehicles} value={capacity} onChange={(event) => setCapacity(Number(event.target.value))} required />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor={`edit-area-unit-${area.id}`}>Régimen de uso</label>
+            <select id={`edit-area-unit-${area.id}`} className="form-select" value={businessUnitId} onChange={(event) => setBusinessUnitId(event.target.value)}>
+              <option value="">Compartida (Multi-Negocio)</option>
+              {businessUnits.map((unit) => <option key={unit.id} value={unit.id}>Exclusiva: {unit.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: "1 / -1" }}>
+            <label className="form-label" htmlFor={`edit-area-description-${area.id}`}>Descripción o referencias físicas</label>
+            <input id={`edit-area-description-${area.id}`} className="form-input" value={description} onChange={(event) => setDescription(event.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "1rem" }}>
+          <button type="button" className="btn btn-secondary" onClick={() => setEditing(false)}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1.8fr 1.5fr 2fr", gap: "1.5rem", alignItems: "center" }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8", padding: "0.15rem 0.45rem", borderRadius: "4px", fontWeight: 700 }}>{area.code}</span>
+          <strong style={{ fontSize: "1.05rem", color: "var(--text-primary)" }}>{area.name}</strong>
+        </div>
+        <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.35rem" }}>{area.description || "Sin descripción física"}</div>
+        <div style={{ marginTop: "0.4rem" }}>
+          {area.businessUnitId ? (
+            <span style={{ fontSize: "0.7rem", background: "rgba(139, 92, 246, 0.2)", color: "#c4b5fd", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>🔒 Exclusiva: {exclusiveUnit || "Convenio"}</span>
+          ) : (
+            <span style={{ fontSize: "0.7rem", background: "rgba(16, 185, 129, 0.2)", color: "#6ee7b7", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>🌐 Uso Compartido</span>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.35rem" }}>
+          <span style={{ color: "var(--text-muted)" }}>Ocupación en vivo:</span>
+          <strong>{activeVehicles} / {area.allocatedCapacity} plazas ({pct}%)</strong>
+        </div>
+        <div className="progress-bar-container"><div className="progress-bar-fill" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: pct >= 100 ? "var(--color-danger)" : pct >= 90 ? "var(--color-warning)" : "var(--color-success)" }} /></div>
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.3rem", display: "block" }}>Plazas libres: {available}</span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.6rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Ajustar cupo:</span>
+          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, -5)} disabled={area.allocatedCapacity - 5 < activeVehicles}>-5</button>
+          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, -1)} disabled={area.allocatedCapacity - 1 < activeVehicles}>-1</button>
+          <strong style={{ fontSize: "1.1rem", fontFamily: "var(--font-mono)", minWidth: "2.5rem", textAlign: "center" }}>{area.allocatedCapacity}</strong>
+          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, 1)} disabled={floatingBuffer < 1}>+1</button>
+          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, 5)} disabled={floatingBuffer < 5}>+5</button>
+        </div>
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Versión: v{area.version} | Mínimo actual: {activeVehicles} plazas</span>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button type="button" className="btn btn-secondary" onClick={beginEditing} aria-label={`Editar área ${area.name}`}>Editar</button>
+          <button type="button" className="btn btn-secondary" onClick={() => onDeactivate(area)} disabled={activeVehicles > 0 || deactivating} title={activeVehicles > 0 ? "Retira los vehículos antes de eliminar el área" : "Eliminar y conservar el registro en historial"} aria-label={`Eliminar área ${area.name}`}>
+            {deactivating ? "Eliminando..." : "Eliminar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   facility,
@@ -22,8 +183,11 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   const [savingFacility, setSavingFacility] = useState(false);
 
   // Areas state
-  const [areas, setAreas] = useState<ParkingArea[]>([]);
+  const [areas, setAreas] = useState<ManagedParkingArea[]>([]);
   const [loadingAreas, setLoadingAreas] = useState(false);
+  const [savingArea, setSavingArea] = useState(false);
+  const [deactivatingAreaId, setDeactivatingAreaId] = useState<string | null>(null);
+  const [pendingAreaDeletion, setPendingAreaDeletion] = useState<ManagedParkingArea | null>(null);
 
   // New Area Form state
   const [newAreaName, setNewAreaName] = useState("");
@@ -32,12 +196,6 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   const [newAreaBuId, setNewAreaBuId] = useState<string>("");
   const [newAreaDesc, setNewAreaDesc] = useState("");
   const [creatingArea, setCreatingArea] = useState(false);
-
-  // Business Unit Form state
-  const [newBuName, setNewBuName] = useState("");
-  const [newBuCode, setNewBuCode] = useState("");
-  const [newBuQuota, setNewBuQuota] = useState(10);
-  const [newBuType, setNewBuType] = useState<"guaranteed" | "contractual" | "dynamic">("dynamic");
 
   // Global messages
   const [feedback, setFeedback] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -75,6 +233,8 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   const allocatedSum = areas.filter((a) => a.isActive).reduce((sum, a) => sum + a.allocatedCapacity, 0);
   const currentTotal = Number(totalCapacity) || 0;
   const floatingBuffer = calculateFacilityBuffer(currentTotal, areas);
+  const activeAreas = areas.filter((area) => area.isActive);
+  const inactiveAreas = areas.filter((area) => !area.isActive);
 
   // Handle saving facility base details
   const handleSaveFacility = async (e: React.FormEvent) => {
@@ -185,24 +345,69 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     }
   };
 
-  // Handle creating a new business unit
-  const handleCreateBU = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newBuName || !newBuCode) return;
-    businessUnits.push({
-      id: crypto.randomUUID(),
-      facilityId: facility?.id || "fac-default-01",
-      name: newBuName,
-      code: newBuCode.toUpperCase(),
-      priorityLevel: newBuType === "guaranteed" ? 1 : newBuType === "contractual" ? 2 : 3,
-      quotaType: newBuType,
-      defaultQuota: Number(newBuQuota),
-      isActive: true,
-    });
-    setFeedback({ text: `✓ Unidad de negocio "${newBuName}" agregada.`, type: "success" });
-    setNewBuName("");
-    setNewBuCode("");
-    if (onRefresh) onRefresh();
+  const handleSaveArea = async (area: ManagedParkingArea, values: AreaEditValues): Promise<boolean> => {
+    if (!facility?.id) return false;
+
+    setSavingArea(true);
+    setFeedback(null);
+    try {
+      const response = await fetch(`/api/facilities/${facility.id}/areas/${area.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...values,
+          version: area.version,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setFeedback({ text: data.error || "No se pudo actualizar el área", type: "error" });
+        return false;
+      }
+
+      setFeedback({ text: `✓ Área "${data.area.name}" actualizada`, type: "success" });
+      await fetchAreas();
+      onRefresh?.();
+      return true;
+    } catch {
+      setFeedback({ text: "Error de red al actualizar el área", type: "error" });
+      return false;
+    } finally {
+      setSavingArea(false);
+    }
+  };
+
+  const handleDeactivateArea = (area: ManagedParkingArea) => {
+    setPendingAreaDeletion(area);
+  };
+
+  const confirmAreaDeletion = async () => {
+    const area = pendingAreaDeletion;
+    if (!facility?.id || !area) return;
+
+    setDeactivatingAreaId(area.id);
+    setFeedback(null);
+    try {
+      const response = await fetch(`/api/facilities/${facility.id}/areas/${area.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false, version: area.version }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setFeedback({ text: data.error || "No se pudo desactivar el área", type: "error" });
+        return;
+      }
+
+      setFeedback({ text: `✓ Área "${data.area.name}" eliminada; se conservó en el historial`, type: "success" });
+      setPendingAreaDeletion(null);
+      await fetchAreas();
+      onRefresh?.();
+    } catch {
+      setFeedback({ text: "Error de red al desactivar el área", type: "error" });
+    } finally {
+      setDeactivatingAreaId(null);
+    }
   };
 
   return (
@@ -220,6 +425,23 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           }}
         >
           {feedback.text}
+        </div>
+      )}
+
+      {pendingAreaDeletion && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "rgba(2, 6, 23, 0.76)" }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="area-delete-title" aria-describedby="area-delete-description" className="glass-panel" style={{ width: "min(100%, 30rem)", padding: "1.75rem", border: "1px solid rgba(248, 113, 113, 0.45)", boxShadow: "0 24px 80px rgba(0, 0, 0, 0.5)" }}>
+            <h3 id="area-delete-title" style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.75rem" }}>Eliminar área</h3>
+            <p id="area-delete-description" style={{ color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "1.25rem" }}>
+              ¿Eliminar <strong>{pendingAreaDeletion.name}</strong>? Se marcará como inactiva, conservará su historial y liberará sus plazas. Esta acción requiere que el área esté vacía.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setPendingAreaDeletion(null)} disabled={deactivatingAreaId !== null}>Cancelar</button>
+              <button type="button" className="btn btn-primary" onClick={() => void confirmAreaDeletion()} disabled={deactivatingAreaId !== null}>
+                {deactivatingAreaId === pendingAreaDeletion.id ? "Eliminando..." : "Confirmar eliminación"}
+              </button>
+            </div>
+          </section>
         </div>
       )}
 
@@ -245,7 +467,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             {allocatedSum}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-            Asignadas a {areas.length} áreas
+            Asignadas a {activeAreas.length} áreas activas
           </span>
         </div>
 
@@ -433,7 +655,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           </form>
         </div>
 
-        {/* Existing Areas List with Live Capacity Re-allocation */}
+        {/* Existing areas, editing, and logical deactivation */}
         <h4 style={{ fontSize: "1.05rem", fontWeight: 600, marginBottom: "1rem" }}>
           Áreas Operativas y Reajuste Dinámico en Caliente
         </h4>
@@ -442,257 +664,62 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
             Cargando áreas de estacionamiento...
           </div>
-        ) : areas.length === 0 ? (
+        ) : activeAreas.length === 0 ? (
           <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
-            No hay áreas creadas. Crea tu primera área arriba utilizando el buffer disponible.
+            No hay áreas operativas. Crea una arriba utilizando el buffer disponible.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            {areas.map((area: any) => {
-              const activeVehicles = area.activeOccupancy || 0;
-              const available = Math.max(0, area.allocatedCapacity - activeVehicles);
-              const pct = area.allocatedCapacity > 0 ? Math.round((activeVehicles / area.allocatedCapacity) * 100) : 0;
-              const isExclusive = Boolean(area.businessUnitId);
-              const exclusiveUnit = isExclusive ? businessUnits.find((u) => u.id === area.businessUnitId)?.name : null;
+            {activeAreas.map((area) => (
+              <ManagedAreaCard
+                key={area.id}
+                area={area}
+                businessUnits={businessUnits}
+                floatingBuffer={floatingBuffer}
+                saving={savingArea}
+                deactivating={deactivatingAreaId === area.id}
+                onSave={handleSaveArea}
+                onDeactivate={handleDeactivateArea}
+                onQuickAdjust={handleQuickAdjustCapacity}
+              />
+            ))}
+          </div>
+        )}
 
-              return (
-                <div
-                  key={area.id}
-                  style={{
-                    background: "rgba(0, 0, 0, 0.25)",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
-                    borderRadius: "10px",
-                    padding: "1.25rem 1.5rem",
-                    display: "grid",
-                    gridTemplateColumns: "1.8fr 1.5fr 2fr",
-                    gap: "1.5rem",
-                    alignItems: "center",
-                  }}
-                >
-                  {/* Left: Info */}
+        {inactiveAreas.length > 0 && (
+          <div style={{ marginTop: "2rem" }}>
+            <h4 style={{ fontSize: "1.05rem", fontWeight: 600, marginBottom: "1rem" }}>
+              Áreas inactivas · historial conservado
+            </h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {inactiveAreas.map((area) => (
+                <div key={area.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", padding: "1rem 1.25rem", background: "rgba(0, 0, 0, 0.18)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "10px", opacity: 0.8 }}>
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <span
-                        style={{
-                          fontSize: "0.75rem",
-                          fontFamily: "var(--font-mono)",
-                          background: "rgba(56, 189, 248, 0.15)",
-                          color: "#38bdf8",
-                          padding: "0.15rem 0.45rem",
-                          borderRadius: "4px",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {area.code}
-                      </span>
-                      <strong style={{ fontSize: "1.05rem", color: "var(--text-primary)" }}>{area.name}</strong>
-                    </div>
-
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.35rem" }}>
-                      {area.description || "Sin descripción física"}
-                    </div>
-
-                    <div style={{ marginTop: "0.4rem" }}>
-                      {isExclusive ? (
-                        <span style={{ fontSize: "0.7rem", background: "rgba(139, 92, 246, 0.2)", color: "#c4b5fd", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>
-                          🔒 Exclusiva: {exclusiveUnit || "Convenio"}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: "0.7rem", background: "rgba(16, 185, 129, 0.2)", color: "#6ee7b7", padding: "0.15rem 0.5rem", borderRadius: "999px" }}>
-                          🌐 Uso Compartido
-                        </span>
-                      )}
-                    </div>
+                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)", marginRight: "0.75rem" }}>{area.code}</span>
+                    <strong>{area.name}</strong>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>{area.description || "Sin descripción física"} · {area.allocatedCapacity} plazas</div>
                   </div>
-
-                  {/* Middle: Live Occupancy */}
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.35rem" }}>
-                      <span style={{ color: "var(--text-muted)" }}>Ocupación en vivo:</span>
-                      <strong>
-                        {activeVehicles} / {area.allocatedCapacity} plazas ({pct}%)
-                      </strong>
-                    </div>
-                    <div className="progress-bar-container">
-                      <div
-                        className="progress-bar-fill"
-                        style={{
-                          width: `${Math.min(100, pct)}%`,
-                          backgroundColor: pct >= 100 ? "var(--color-danger)" : pct >= 90 ? "var(--color-warning)" : "var(--color-success)",
-                        }}
-                      />
-                    </div>
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.3rem", display: "block" }}>
-                      Plazas libres: {available}
-                    </span>
-                  </div>
-
-                  {/* Right: Dynamic Capacity Controls */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.5rem" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Ajustar cupo dinámico:</span>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
-                        onClick={() => handleQuickAdjustCapacity(area, -5)}
-                        disabled={area.allocatedCapacity - 5 < activeVehicles}
-                        title={area.allocatedCapacity - 5 < activeVehicles ? "No se puede reducir por debajo de autos estacionados" : "Reducir 5 plazas"}
-                      >
-                        -5
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
-                        onClick={() => handleQuickAdjustCapacity(area, -1)}
-                        disabled={area.allocatedCapacity - 1 < activeVehicles}
-                        title="Reducir 1 plaza"
-                      >
-                        -1
-                      </button>
-                      <span
-                        style={{
-                          fontSize: "1.2rem",
-                          fontWeight: 700,
-                          fontFamily: "var(--font-mono)",
-                          padding: "0 0.4rem",
-                          minWidth: "3rem",
-                          textAlign: "center",
-                          color: "var(--text-primary)",
-                        }}
-                      >
-                        {area.allocatedCapacity}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
-                        onClick={() => handleQuickAdjustCapacity(area, 1)}
-                        disabled={floatingBuffer < 1}
-                        title={floatingBuffer < 1 ? "Sin buffer flotante disponible" : "Aumentar 1 plaza"}
-                      >
-                        +1
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
-                        onClick={() => handleQuickAdjustCapacity(area, 5)}
-                        disabled={floatingBuffer < 5}
-                        title={floatingBuffer < 5 ? "Buffer insuficiente para +5" : "Aumentar 5 plazas"}
-                      >
-                        +5
-                      </button>
-                    </div>
-
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                      Versión: v{area.version} | Mínimo actual: {activeVehicles} plazas
-                    </span>
-                  </div>
+                  <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem", borderRadius: "999px", background: "rgba(148, 163, 184, 0.15)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>Inactiva</span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         )}
       </div>
 
       {/* Section 3: Business Units and Active Events */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
-        {/* Business Units Config Form */}
-        <div className="glass-panel" style={{ padding: "2rem" }}>
-          <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "1rem" }}>
-            3. Agregar Unidad de Negocio
-          </h3>
+        {facility && <BusinessUnitManager facilityId={facility.id} onRefresh={onRefresh} />}
 
-          <form onSubmit={handleCreateBU}>
-            <div className="form-group">
-              <label className="form-label">Nombre de la Unidad</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="ej. Spa & Club"
-                value={newBuName}
-                onChange={(e) => setNewBuName(e.target.value)}
-                required
-              />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-              <div className="form-group">
-                <label className="form-label">Código</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="SPA"
-                  maxLength={6}
-                  value={newBuCode}
-                  onChange={(e) => setNewBuCode(e.target.value.toUpperCase())}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Tipo de Cuota</label>
-                <select
-                  className="form-select"
-                  value={newBuType}
-                  onChange={(e) => setNewBuType(e.target.value as any)}
-                >
-                  <option value="dynamic">Dinámica (Rotativa)</option>
-                  <option value="guaranteed">Garantizada (Hotel)</option>
-                  <option value="contractual">Contractual (Eventos)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Cupos Base Asignados</label>
-              <input
-                type="number"
-                className="form-input"
-                min={0}
-                max={1000}
-                value={newBuQuota}
-                onChange={(e) => setNewBuQuota(Number(e.target.value))}
-              />
-            </div>
-
-            <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "0.5rem" }}>
-              Guardar Unidad de Negocio
-            </button>
-          </form>
-        </div>
-
-        {/* Active Events and Contractual Reservations */}
-        <div className="glass-panel" style={{ padding: "2rem" }}>
-          <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "1rem" }}>
-            4. Eventos y Reservas Contractuales Activas
-          </h3>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {events.length === 0 ? (
-              <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>No hay eventos programados actualmente</p>
-            ) : (
-              events.map((ev) => (
-                <div
-                  key={ev.id}
-                  style={{
-                    padding: "0.85rem 1rem",
-                    background: "rgba(0, 0, 0, 0.2)",
-                    borderRadius: "8px",
-                    borderLeft: "3px solid #8b5cf6",
-                  }}
-                >
-                  <div style={{ fontWeight: 600 }}>{ev.title}</div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
-                    {ev.reservedSlots} cupos reservados | Horario: {new Date(ev.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(ev.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        {facility && (
+          <EventBookingsManager
+            facilityId={facility.id}
+            facilityCapacity={facility.totalCapacity}
+            businessUnits={businessUnits}
+            events={events}
+            onRefresh={onRefresh}
+          />
+        )}
       </div>
     </div>
   );

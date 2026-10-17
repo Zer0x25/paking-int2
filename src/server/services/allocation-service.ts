@@ -30,6 +30,7 @@ export const defaultBusinessUnits: BusinessUnit[] = [
     quotaType: "guaranteed",
     defaultQuota: 40,
     isActive: true,
+    version: 1,
   },
   {
     id: "bu-events-01",
@@ -40,6 +41,7 @@ export const defaultBusinessUnits: BusinessUnit[] = [
     quotaType: "contractual",
     defaultQuota: 0,
     isActive: true,
+    version: 1,
   },
   {
     id: "bu-restaurant-01",
@@ -50,6 +52,7 @@ export const defaultBusinessUnits: BusinessUnit[] = [
     quotaType: "dynamic",
     defaultQuota: 0,
     isActive: true,
+    version: 1,
   },
   {
     id: "bu-gym-01",
@@ -60,8 +63,26 @@ export const defaultBusinessUnits: BusinessUnit[] = [
     quotaType: "dynamic",
     defaultQuota: 0,
     isActive: true,
+    version: 1,
   },
 ];
+
+export const businessUnitsStore: BusinessUnit[] = defaultBusinessUnits.map((unit) => ({ ...unit }));
+
+export type BusinessUnitAuditAction = "created" | "updated" | "deactivated";
+
+export interface BusinessUnitAuditEntry {
+  id: string;
+  facilityId: string;
+  businessUnitId: string;
+  userId: string;
+  action: BusinessUnitAuditAction;
+  before: BusinessUnit | null;
+  after: BusinessUnit;
+  createdAt: string;
+}
+
+export const businessUnitAuditStore: BusinessUnitAuditEntry[] = [];
 
 export const defaultEvents: EventBooking[] = [
   {
@@ -73,25 +94,48 @@ export const defaultEvents: EventBooking[] = [
     startTime: "2026-10-15T08:00:00Z",
     endTime: "2026-10-16T22:00:00Z",
     status: "active",
+    version: 1,
   },
 ];
+
+export type EventBookingAuditAction = "created" | "updated" | "cancelled";
+
+export interface EventBookingAuditEntry {
+  id: string;
+  facilityId: string;
+  eventId: string;
+  userId: string;
+  action: EventBookingAuditAction;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export const eventBookingsStore: EventBooking[] = defaultEvents.map((event) => ({ ...event }));
+export const eventBookingAuditStore: EventBookingAuditEntry[] = [];
 
 export function checkAllocationAvailability(
   facilityId: string,
   businessUnitId: string,
   activeSessions: ParkingSession[]
 ): { allowed: boolean; reason?: string } {
-  const bu = defaultBusinessUnits.find((b) => b.id === businessUnitId);
+  const bu = businessUnitsStore.find((b) => b.id === businessUnitId);
   if (!bu) {
     // If not found in default list, allow by default or reject if not registered
     return { allowed: true };
   }
+  if (!bu.isActive) {
+    return { allowed: false, reason: `La unidad de negocio ${bu.name} está inactiva` };
+  }
+
+  const availableUnits = businessUnitsStore.filter(
+    (unit) => unit.isActive && (unit.facilityId === facilityId || unit.facilityId === defaultFacility.id),
+  );
 
   return canAdmitVehicle({
     facility: defaultFacility,
     businessUnit: bu,
-    businessUnits: defaultBusinessUnits,
-    events: defaultEvents,
+    businessUnits: availableUnits,
+    events: eventBookingsStore.filter((event) => event.facilityId === facilityId),
     activeSessions,
   });
 }
@@ -102,8 +146,10 @@ export function getFacilityAvailability(
 ): AvailabilityResult {
   return calculateAvailability({
     facility: defaultFacility,
-    businessUnits: defaultBusinessUnits,
-    events: defaultEvents,
+    businessUnits: businessUnitsStore.filter(
+      (unit) => unit.isActive && (unit.facilityId === facilityId || unit.facilityId === defaultFacility.id),
+    ),
+    events: eventBookingsStore.filter((event) => event.facilityId === facilityId),
     activeSessions,
   });
 }
