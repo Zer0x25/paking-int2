@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { SyncStatusBar } from "./components/SyncStatusBar";
-import { VehicleEntryForm } from "./components/VehicleEntryForm";
-import { VehicleExitForm } from "./components/VehicleExitForm";
+import { VehicleGatePanel } from "./components/VehicleGatePanel";
 import { OperationalDashboard } from "./components/OperationalDashboard";
 import { FacilityConfigView } from "./components/FacilityConfigView";
 import { LoginView } from "./components/LoginView";
@@ -28,6 +27,7 @@ export const App: React.FC = () => {
   const [events, setEvents] = useState<EventBooking[]>(defaultEvents);
   const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(false);
+  const [gateRefreshKey, setGateRefreshKey] = useState(0);
 
   const fetchCatalogs = async () => {
     try {
@@ -152,22 +152,26 @@ export const App: React.FC = () => {
       {/* Main Content Area */}
       <main className="main-content" style={{ flex: 1 }}>
         {/* Sync Status Banner */}
-        <SyncStatusBar facilityId={facility.id} onSyncCompleted={fetchDashboard} />
+        <SyncStatusBar
+          facilityId={facility.id}
+          onSyncCompleted={() => {
+            fetchDashboard();
+            setGateRefreshKey((current) => current + 1);
+          }}
+        />
 
         {/* Tab Views */}
         {visibleSections.includes("vehicle-entry") && visibleSections.includes("vehicle-exit") && (
           <section>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
-              <VehicleEntryForm
-                facilityId={facility.id}
-                businessUnits={businessUnits}
-                spaceCategories={spaceCategories}
-                areas={areas}
-                onEntrySuccess={fetchDashboard}
-              />
-              <VehicleExitForm facilityId={facility.id} onExitSuccess={fetchDashboard} />
-            </div>
-
+            <VehicleGatePanel
+              facilityId={facility.id}
+              businessUnits={businessUnits}
+              spaceCategories={spaceCategories}
+              areas={areas}
+              operatorUserId={currentUser.id}
+              refreshKey={gateRefreshKey}
+              onOperationSuccess={fetchDashboard}
+            />
           </section>
         )}
 

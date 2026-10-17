@@ -191,17 +191,18 @@ export type CancelEventBookingInput = z.infer<typeof CancelEventBookingInputSche
 export const SessionStatusEnum = z.enum(["active", "completed"]);
 export type SessionStatus = z.infer<typeof SessionStatusEnum>;
 
+export const LicensePlateInputSchema = z
+  .string()
+  .regex(/^(?:[A-Z0-9]{6}|[A-Z0-9]{2}-[A-Z0-9]{2}-[A-Z0-9]{2})$/i, "La patente debe tener formato XX-XX-XX")
+  .transform((value) => value.toUpperCase().replace(/-/g, ""));
+
 export const ParkingSessionSchema = z.object({
   id: z.string().min(1),
   facilityId: z.string().min(1),
   businessUnitId: z.string().min(1),
   spaceCategoryId: z.string().min(1),
   parkingAreaId: z.string().nullable().optional(),
-  licensePlate: z
-    .string()
-    .min(3, "Patente muy corta")
-    .max(12, "Patente muy larga")
-    .transform((val) => val.toUpperCase().replace(/[^A-Z0-9]/g, "")),
+  licensePlate: LicensePlateInputSchema,
   entryTime: z.string().datetime(),
   exitTime: z.string().datetime().nullable().default(null),
   status: SessionStatusEnum.default("active"),
@@ -240,18 +241,57 @@ export const AuditLogSchema = z.object({
 export type AuditLog = z.infer<typeof AuditLogSchema>;
 
 // --- Offline Outbox Sync Mutation ---
-export const MutationTypeEnum = z.enum(["VEHICLE_ENTRY", "VEHICLE_EXIT"]);
+export const MutationTypeEnum = z.enum(["VEHICLE_ENTRY", "VEHICLE_EXIT", "VEHICLE_PLATE_UPDATE"]);
 export type MutationType = z.infer<typeof MutationTypeEnum>;
 
-export const SyncMutationSchema = z.object({
+const SyncMutationBaseSchema = {
   id: z.string().min(1),
-  type: MutationTypeEnum,
-  payload: z.record(z.any()),
   clientTimestamp: z.string().datetime(),
   deviceId: z.string(),
   status: z.enum(["pending", "syncing", "synced", "failed"]).default("pending"),
   retryCount: z.number().int().default(0),
-});
+};
+
+export const SyncMutationSchema = z.discriminatedUnion("type", [
+  z.object({
+    ...SyncMutationBaseSchema,
+    type: z.literal("VEHICLE_ENTRY"),
+    payload: z.object({
+      facilityId: z.string().min(1).optional(),
+      businessUnitId: z.string().min(1),
+      spaceCategoryId: z.string().min(1),
+      parkingAreaId: z.string().min(1).nullable().optional(),
+      licensePlate: LicensePlateInputSchema,
+      entryTime: z.string().datetime().optional(),
+      operatorUserId: z.string().min(1).optional(),
+    }).strict(),
+  }).strict(),
+  z.object({
+    ...SyncMutationBaseSchema,
+    type: z.literal("VEHICLE_EXIT"),
+    payload: z.object({
+      facilityId: z.string().min(1).optional(),
+      sessionId: z.string().min(1).optional(),
+      licensePlate: LicensePlateInputSchema.optional(),
+      exitTime: z.string().datetime().optional(),
+      expectedVersion: z.number().int().positive().optional(),
+      operatorUserId: z.string().min(1).optional(),
+    }).strict().refine((payload) => Boolean(payload.sessionId || payload.licensePlate), {
+      message: "La salida debe incluir sessionId o licensePlate",
+    }),
+  }).strict(),
+  z.object({
+    ...SyncMutationBaseSchema,
+    type: z.literal("VEHICLE_PLATE_UPDATE"),
+    payload: z.object({
+      facilityId: z.string().min(1).optional(),
+      sessionId: z.string().min(1),
+      licensePlate: LicensePlateInputSchema,
+      expectedVersion: z.number().int().positive(),
+      operatorUserId: z.string().min(1).optional(),
+    }).strict(),
+  }).strict(),
+]);
 export type SyncMutation = z.infer<typeof SyncMutationSchema>;
 
 // --- Dashboard & Occupancy Metrics ---

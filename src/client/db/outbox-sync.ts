@@ -12,12 +12,16 @@ export interface SyncResult {
 
 export type ApiPoster = (endpoint: string, body: any) => Promise<SyncResult>;
 
+export function orderMutationsByTimestamp(mutations: SyncMutation[]): SyncMutation[] {
+  return [...mutations].sort((a, b) => a.clientTimestamp.localeCompare(b.clientTimestamp));
+}
+
 export async function processDeltaSync(
   facilityId: string,
   deviceId: string,
   apiPoster?: ApiPoster
 ): Promise<SyncResult> {
-  const pendingMutations = await getPendingOutboxMutations();
+  const pendingMutations = orderMutationsByTimestamp(await getPendingOutboxMutations());
 
   if (pendingMutations.length === 0) {
     return { processed: 0, succeeded: [], conflicts: [] };

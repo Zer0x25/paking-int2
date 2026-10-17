@@ -1,15 +1,23 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import app from "@server/index";
 import { mockSessionsRepo } from "@server/routes/parking";
+import { signJwt } from "@server/middleware/auth";
 
 describe("Server API Endpoints Integration Tests (TDD)", () => {
   const facilityId = "fac-default-01";
   const hotelUnitId = "bu-hotel-01";
   const spaceCatId = "cat-std";
+  let authToken: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockSessionsRepo.length = 0; // Clear mock repo
+    authToken = await signJwt(
+      { userId: "operator-api-test", username: "operador", role: "operator", facilityId },
+      "supersecret_jwt_key_local_development"
+    );
   });
+
+  const authHeaders = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${authToken}` });
 
   it("should respond to health check", async () => {
     const res = await app.request("/api/health");
@@ -84,7 +92,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // Bad payload entry
     const badEntry = await app.request("/api/parking-sessions/entry", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ licensePlate: "AB" }),
     });
     expect(badEntry.status).toBe(400);
@@ -92,7 +100,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // Valid entry
     const entryRes = await app.request("/api/parking-sessions/entry", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         facilityId,
         businessUnitId: hotelUnitId,
@@ -110,30 +118,30 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // Prevent duplicate entry
     const dupRes = await app.request("/api/parking-sessions/entry", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         facilityId,
         businessUnitId: hotelUnitId,
         spaceCategoryId: spaceCatId,
-        licensePlate: "kkl-990",
+        licensePlate: "kk-l9-90",
       }),
     });
     expect(dupRes.status).toBe(409);
 
     // List active
-    const listRes = await app.request(`/api/parking-sessions/active?facilityId=${facilityId}`);
+    const listRes = await app.request(`/api/parking-sessions/active?facilityId=${facilityId}`, { headers: authHeaders() });
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json();
     expect(listBody.count).toBe(1);
 
     // List active without facilityId (400)
-    const noFacList = await app.request("/api/parking-sessions/active");
+    const noFacList = await app.request("/api/parking-sessions/active", { headers: authHeaders() });
     expect(noFacList.status).toBe(400);
 
     // Bad payload exit
     const badExit = await app.request("/api/parking-sessions/exit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({}),
     });
     expect(badExit.status).toBe(400);
@@ -141,7 +149,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // Valid exit
     const exitRes = await app.request("/api/parking-sessions/exit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         facilityId,
         licensePlate: "KKL990",
@@ -153,7 +161,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // Exit non-existent plate
     const notFoundExit = await app.request("/api/parking-sessions/exit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         facilityId,
         licensePlate: "ZZZ999",
@@ -181,7 +189,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // Bad payload
     const badSync = await app.request("/api/sync/delta", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ invalid: true }),
     });
     expect(badSync.status).toBe(400);
@@ -189,7 +197,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // First, sync entry
     const syncRes1 = await app.request("/api/sync/delta", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         facilityId,
         deviceId: "sync-gate-01",
@@ -215,7 +223,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
     // Second, sync duplicate entry (conflict) + sync exit for missing car (conflict)
     const syncRes2 = await app.request("/api/sync/delta", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         facilityId,
         deviceId: "sync-gate-01",
@@ -237,7 +245,7 @@ describe("Server API Endpoints Integration Tests (TDD)", () => {
             id: "mut-missing-exit",
             type: "VEHICLE_EXIT",
             payload: {
-              licensePlate: "GHOST_CAR",
+              licensePlate: "ZZ9Z99",
             },
             clientTimestamp: new Date().toISOString(),
             deviceId: "sync-gate-01",

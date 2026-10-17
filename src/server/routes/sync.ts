@@ -5,16 +5,19 @@ import {
   createParkingSession,
   completeParkingSession,
   normalizeLicensePlate,
+  updateActiveParkingSessionPlate,
 } from "@core/models/parking-session";
-import { mockSessionsRepo } from "./parking";
+import { authMiddleware } from "../middleware/auth";
+import { mockSessionsRepo, parkingSessionAuditStore } from "./parking";
 
 export const syncRoutes = new Hono();
+syncRoutes.use("*", authMiddleware());
 
 const DeltaSyncPayloadSchema = z.object({
   facilityId: z.string().min(1),
   deviceId: z.string(),
   mutations: z.array(SyncMutationSchema),
-});
+}).strict();
 
 // POST /api/sync/delta
 syncRoutes.post("/delta", async (c) => {
@@ -33,7 +36,7 @@ syncRoutes.post("/delta", async (c) => {
     try {
       if (mut.type === "VEHICLE_ENTRY") {
         const payload = mut.payload;
-        const normPlate = normalizeLicensePlate(payload.licensePlate || "");
+        const normPlate = normalizeLicensePlate(payload.licensePlate);
 
         // Check if already active
         const existing = mockSessionsRepo.find(
@@ -53,6 +56,7 @@ syncRoutes.post("/delta", async (c) => {
           facilityId,
           businessUnitId: payload.businessUnitId,
           spaceCategoryId: payload.spaceCategoryId,
+          parkingAreaId: payload.parkingAreaId,
           licensePlate: normPlate,
           entryTime: payload.entryTime || mut.clientTimestamp,
           operatorUserId: payload.operatorUserId || "offline-operator",
@@ -60,29 +64,84 @@ syncRoutes.post("/delta", async (c) => {
         });
 
         mockSessionsRepo.push(session);
+        const user = (c.get as any)("user") as { userId?: string } | undefined;
+        parkingSessionAuditStore.push({
+          userId: user?.userId || payload.operatorUserId || "offline-operator",
+          action: "created",
+          facilityId,
+          sessionId: session.id,
+          after: session,
+          createdAt: new Date().toISOString(),
+        });
         succeeded.push(mut.id);
       } else if (mut.type === "VEHICLE_EXIT") {
         const payload = mut.payload;
-        const normPlate = normalizeLicensePlate(payload.licensePlate || "");
-
-        const sessionIndex = mockSessionsRepo.findIndex(
-          (s) => s.facilityId === facilityId && s.licensePlate === normPlate && s.status === "active"
-        );
+        const normPlate = payload.licensePlate ? normalizeLicensePlate(payload.licensePlate) : "";
+        const sessionIndex = mockSessionsRepo.findIndex((session) => {
+          if (session.facilityId !== facilityId || session.status !== "active") return false;
+          if (payload.sessionId) return session.id === payload.sessionId;
+          return session.licensePlate === normPlate;
+        });
 
         if (sessionIndex === -1) {
           conflicts.push({
             mutationId: mut.id,
-            reason: `No existe sesión activa para el egreso de ${normPlate}`,
+            reason: payload.sessionId
+              ? `No existe sesión activa para el egreso de la sesión ${payload.sessionId}`
+              : `No existe sesión activa para el egreso de ${normPlate}`,
           });
           continue;
         }
 
         const currentSession = mockSessionsRepo[sessionIndex];
+        if (payload.expectedVersion !== undefined && currentSession.version !== payload.expectedVersion) {
+          conflicts.push({ mutationId: mut.id, reason: "La versión de la sesión cambió antes del egreso" });
+          continue;
+        }
         const updated = completeParkingSession(
           currentSession,
           payload.exitTime || mut.clientTimestamp
         );
         mockSessionsRepo[sessionIndex] = updated;
+        const user = (c.get as any)("user") as { userId?: string } | undefined;
+        parkingSessionAuditStore.push({
+          userId: user?.userId || payload.operatorUserId || "offline-operator",
+          action: "exited",
+          facilityId,
+          sessionId: updated.id,
+          before: currentSession,
+          after: updated,
+          createdAt: new Date().toISOString(),
+        });
+        succeeded.push(mut.id);
+      } else if (mut.type === "VEHICLE_PLATE_UPDATE") {
+        const payload = mut.payload;
+        const sessionIndex = mockSessionsRepo.findIndex(
+          (session) => session.id === payload.sessionId && session.facilityId === facilityId && session.status === "active"
+        );
+        if (sessionIndex === -1) {
+          conflicts.push({ mutationId: mut.id, reason: "No existe una sesión activa para corregir" });
+          continue;
+        }
+
+        const currentSession = mockSessionsRepo[sessionIndex];
+        const updated = updateActiveParkingSessionPlate({
+          currentSession,
+          licensePlate: payload.licensePlate,
+          existingSessions: mockSessionsRepo,
+          expectedVersion: payload.expectedVersion,
+        });
+        mockSessionsRepo[sessionIndex] = updated;
+        const user = (c.get as any)("user") as { userId?: string } | undefined;
+        parkingSessionAuditStore.push({
+          userId: user?.userId || payload.operatorUserId || "offline-operator",
+          action: "plate_updated",
+          facilityId,
+          sessionId: updated.id,
+          before: { licensePlate: currentSession.licensePlate },
+          after: { licensePlate: updated.licensePlate },
+          createdAt: new Date().toISOString(),
+        });
         succeeded.push(mut.id);
       }
     } catch (err: any) {

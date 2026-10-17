@@ -21,6 +21,6 @@
     },
     "types": ["node", "vite/client"]
   },
-  "include": ["src/**/*", "tests/**/*", "vite.config.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist", ".wrangler"]
+  "include": ["src/**/*", "tests/**/*", "vite.config.ts", "vitest.config.ts", "vitest.workers.config.ts"],
+  "exclude": ["node_modules", "dist", ".wrangler", "tests/workers"]
 }

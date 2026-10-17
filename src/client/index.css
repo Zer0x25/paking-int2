@@ -130,6 +130,7 @@ body {
 /* Layout */
 .main-content {
   max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
   padding: 2rem 1.5rem;
 }
@@ -195,6 +196,241 @@ body {
   letter-spacing: 0.15em;
   text-align: center;
   text-transform: uppercase;
+}
+
+/* Gate operations */
+.gate-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1.25rem;
+}
+
+.gate-operation-card,
+.gate-active-panel {
+  padding: clamp(1rem, 2.5vw, 1.75rem);
+}
+
+.gate-operation-header,
+.gate-active-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.gate-operation-header h2,
+.gate-active-header h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.gate-operation-header p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: 0.15rem;
+}
+
+.gate-eyebrow {
+  display: block;
+  color: #a5b4fc;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.25rem;
+}
+
+.gate-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  flex: 0 0 auto;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.gate-mode-switch button {
+  min-width: 112px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.65rem 0.9rem;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 0.9rem var(--font-main);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.gate-mode-switch button:hover,
+.gate-mode-switch button:focus-visible {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.07);
+  outline: none;
+}
+
+.gate-mode-switch button.active {
+  color: #fff;
+  background: var(--accent-primary);
+  box-shadow: 0 2px 9px rgba(99, 102, 241, 0.28);
+}
+
+.gate-input-hint {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.gate-entry-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1rem;
+}
+
+.gate-area-field {
+  grid-column: 1 / -1;
+}
+
+.gate-submit {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.gate-message {
+  margin-top: 1rem;
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 1rem;
+  font-weight: 600;
+}
+
+.gate-message.success {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.gate-message.error,
+.gate-list-error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.gate-ticket {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  text-align: center;
+  border: 1px dashed rgba(165, 180, 252, 0.4);
+  border-radius: var(--radius-sm);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.gate-ticket span,
+.gate-ticket small {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.gate-ticket strong {
+  font: 700 1.2rem var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.gate-count {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  flex: 0 0 auto;
+  color: #c4b5fd;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  border-radius: 50%;
+  font: 700 1rem var(--font-mono);
+}
+
+.gate-list-empty {
+  padding: 1.5rem 1rem;
+  color: var(--text-muted);
+  text-align: center;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.gate-list-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-sm);
+}
+
+.gate-session-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.gate-session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  background: rgba(9, 13, 22, 0.45);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.gate-session-main {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.gate-session-plate {
+  font: 700 1.15rem var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.gate-session-context {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gate-session-time {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.gate-session-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.gate-session-actions .btn {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.84rem;
+}
+
+.gate-row-exit {
+  background: rgba(239, 68, 68, 0.92);
+}
+
+.gate-edit-plate {
+  min-width: min(320px, 50vw);
 }
 
 /* Buttons */
@@ -326,6 +562,12 @@ body {
 }
 
 /* Responsive */
+@media (max-width: 900px) {
+  .gate-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
   .app-header {
     flex-direction: column;
@@ -334,5 +576,48 @@ body {
   }
   .main-content {
     padding: 1rem 0.75rem;
+  }
+  .gate-operation-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .gate-mode-switch {
+    width: 100%;
+  }
+  .gate-mode-switch button {
+    min-width: 0;
+  }
+  .gate-session-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .gate-session-actions {
+    justify-content: stretch;
+  }
+  .gate-session-actions .btn {
+    flex: 1 1 auto;
+  }
+  .gate-edit-plate {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .gate-entry-fields {
+    grid-template-columns: 1fr;
+  }
+  .gate-area-field {
+    grid-column: auto;
+  }
+  .gate-list-error {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .gate-list-error .btn {
+    width: 100%;
+  }
+  .gate-operation-header h2,
+  .gate-active-header h2 {
+    font-size: 1.15rem;
   }
 }

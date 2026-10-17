@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import type { ParkingSession, SyncMutation, ParkingArea } from "@core/types/schema";
+import { SyncMutationSchema, type ParkingSession, type SyncMutation, type ParkingArea } from "@core/types/schema";
 
 export interface ParkingDB extends DBSchema {
   offline_sessions: {
@@ -86,6 +86,11 @@ export async function saveLocalSession(session: ParkingSession): Promise<void> {
   await db.put("offline_sessions", session);
 }
 
+export async function deleteLocalSession(sessionId: string): Promise<void> {
+  const db = await getDB();
+  await db.delete("offline_sessions", sessionId);
+}
+
 export async function getLocalSessionByPlate(plate: string, facilityId: string): Promise<ParkingSession | undefined> {
   const db = await getDB();
   const tx = db.transaction("offline_sessions", "readonly");
@@ -96,12 +101,20 @@ export async function getLocalSessionByPlate(plate: string, facilityId: string):
 }
 
 export async function getActiveSessionsCount(facilityId: string): Promise<number> {
+  return (await getActiveSessions(facilityId)).length;
+}
+
+export async function getActiveSessions(facilityId: string): Promise<ParkingSession[]> {
   const db = await getDB();
   const tx = db.transaction("offline_sessions", "readonly");
   const index = tx.store.index("by-facility");
   const all = await index.getAll(facilityId);
-  return all.filter((s) => s.status === "active").length;
+  return all
+    .filter((session) => session.status === "active")
+    .sort((a, b) => b.entryTime.localeCompare(a.entryTime));
 }
+
+export const getLocalActiveSessions = getActiveSessions;
 
 // Area helper methods
 export async function saveLocalArea(area: ParkingArea): Promise<void> {
@@ -126,15 +139,16 @@ export async function getActiveSessionsByArea(areaId: string): Promise<number> {
 
 // Outbox helper methods
 export async function enqueueOutboxMutation(mutation: SyncMutation): Promise<void> {
+  const validatedMutation = SyncMutationSchema.parse(mutation);
   const db = await getDB();
-  await db.put("outbox_queue", mutation);
+  await db.put("outbox_queue", validatedMutation);
 }
 
 export async function getPendingOutboxMutations(): Promise<SyncMutation[]> {
   const db = await getDB();
   const tx = db.transaction("outbox_queue", "readonly");
   const index = tx.store.index("by-status");
-  return index.getAll("pending");
+  return (await index.getAll("pending")).sort((a, b) => a.clientTimestamp.localeCompare(b.clientTimestamp));
 }
 
 export async function markOutboxMutationSynced(id: string): Promise<void> {
