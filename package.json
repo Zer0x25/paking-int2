@@ -15,8 +15,8 @@
     "db:local:init": "node scripts/db/init-local.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.workers.json",
     "lint": "eslint .",
-    "worker:dev": "node scripts/dev-worker.mjs",
-    "worker:deploy": "wrangler deploy src/server/index.ts"
+    "worker:dev": "npm run build && node scripts/dev-worker.mjs",
+    "worker:deploy": "npm run build && wrangler deploy src/server/index.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
