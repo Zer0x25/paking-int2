@@ -85,6 +85,9 @@ const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({
             <option value="guaranteed">{quotaLabels.guaranteed}</option>
             <option value="contractual">{quotaLabels.contractual}</option>
           </select>
+          <small style={{ display: "block", color: "var(--text-muted)", marginTop: "0.35rem" }}>
+            Define cómo se asignan los cupos a esta unidad. El tipo de espacio se selecciona por separado en Garita.
+          </small>
         </div>
       </div>
 

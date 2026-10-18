@@ -113,3 +113,13 @@
 - [x] T043 Update contracts, data model, quickstart, ADR index, and PHR for the completed facility lifecycle
 - [x] T044 Run Worker and client acceptance tests, typecheck, lint, and coverage gates
 - [ ] T045 Verify first-run creation, edit, and confirmed deletion in a signed-in real browser against an isolated D1 database without changing persistent local demo data or remote staging
+
+## Phase 10: Initial Space Category for New Facilities
+
+**Purpose**: Ensure a newly created facility can register its first vehicle and clarify the separate meaning of unit quota rules and gate space categories.
+
+- [x] T046 [P] Add a Worker acceptance assertion that facility bootstrap creates a `STD` / “General / Estándar” category with `allocatedSlots` equal to facility capacity, and use that category for the first vehicle-entry request in `tests/workers/configuration-persistence.worker.test.ts`
+- [x] T047 Persist the default category as part of the facility bootstrap batch and add idempotent migration `0003_default_space_category.sql` for active existing facilities
+- [x] T048 Clarify the unit field label/help text so operators can distinguish quota allocation rules from space categories in `src/client/components/BusinessUnitManager.tsx`
+- [x] T049 Update the approved spec, API contract, data model, quickstart, ADR, deployment notes, and PHR with the bootstrap category behavior
+- [x] T050 Run the focused Worker/client verification and required type/lint/coverage gates; verify that Garita displays the default category in a real browser without submitting a vehicle entry

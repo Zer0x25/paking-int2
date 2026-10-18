@@ -20,7 +20,7 @@
 
 - [ ] Record the release commit SHA and confirm CI passes tests and 85% coverage, types, lint, dependency audit, build, and Wrangler dry-run.
 - [x] Apply `0001_initial_persistence.sql` only to the staging database.
-- [ ] Review and apply `0002_facility_lifecycle.sql` to staging before releasing the facility lifecycle code.
+- [ ] Review and apply `0002_facility_lifecycle.sql` and `0003_default_space_category.sql` to staging before releasing the facility lifecycle and gate bootstrap code.
 - [x] Deploy staging from `.dev.vars.staging`; `/api/health` returned HTTP 200 with `Cache-Control: no-store`.
 - [ ] Verify admin/operator login, facility scoping, gate entry/exit, configuration permissions, offline sync, and event invalidation.
 - [ ] Verify private API responses use `Cache-Control: no-store`; review structured Logs, Traces, and source-mapped errors for sensitive data.

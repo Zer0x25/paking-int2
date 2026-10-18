@@ -125,6 +125,7 @@ export async function createFacilityRecord(
   const database = requireD1(bindings);
   const facility: Facility = input;
   const auditId = crypto.randomUUID();
+  const categoryId = crypto.randomUUID();
   const auditDetails = JSON.stringify({ facility });
   const results = await database.batch([
     database.prepare(
@@ -135,11 +136,14 @@ export async function createFacilityRecord(
     ).bind(input.id, actor.userId, input.id),
     database.prepare("DELETE FROM facilities WHERE id = ? AND changes() = 0").bind(input.id),
     database.prepare(
-      "INSERT INTO audit_logs (id, user_id, facility_id, action, entity_type, entity_id, details_json, mutation_id, created_at) SELECT ?, ?, ?, 'created', 'facility', ?, ?, NULL, ? WHERE EXISTS (SELECT 1 FROM facilities WHERE id = ? AND is_active = 1) AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?)",
-    ).bind(auditId, actor.userId, input.id, input.id, auditDetails, input.createdAt, input.id, actor.userId, input.id),
+      "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) SELECT ?, ?, 'General / Estándar', 'STD', total_capacity FROM facilities WHERE id = ? AND is_active = 1 AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?)",
+    ).bind(categoryId, input.id, input.id, actor.userId, input.id),
+    database.prepare(
+      "INSERT INTO audit_logs (id, user_id, facility_id, action, entity_type, entity_id, details_json, mutation_id, created_at) SELECT ?, ?, ?, 'created', 'facility', ?, ?, NULL, ? WHERE EXISTS (SELECT 1 FROM facilities WHERE id = ? AND is_active = 1) AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?) AND EXISTS (SELECT 1 FROM space_categories WHERE facility_id = ? AND code = 'STD')",
+    ).bind(auditId, actor.userId, input.id, input.id, auditDetails, input.createdAt, input.id, actor.userId, input.id, input.id),
   ]);
   const changes = results.map(rowChanges);
-  if (results.length !== 4 || changes[0] !== 1 || changes[1] !== 1 || changes[2] !== 0 || changes[3] !== 1) {
+  if (results.length !== 5 || changes[0] !== 1 || changes[1] !== 1 || changes[2] !== 0 || changes[3] !== 1 || changes[4] !== 1) {
     throw new PersistenceConflictError("La identidad ya tiene un recinto asignado o el alta se procesó en otra solicitud");
   }
   return facility;

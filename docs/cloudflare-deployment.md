@@ -76,7 +76,7 @@ The account owner performs these steps in the intended Cloudflare account. Curre
    ```
 
    Wrangler records applied migrations and captures a D1 backup after applying. Do not use `--local` for a remote release.
-   The facility bootstrap and deactivation change adds `0002_facility_lifecycle.sql`; this migration is pending in the current staging D1 and must be reviewed before its code release.
+   The facility lifecycle and initial space-category changes add `0002_facility_lifecycle.sql` and `0003_default_space_category.sql`; both are pending in the current staging D1 and must be reviewed before their code release.
 4. After the initial Worker exists, run `npm run worker:deploy:staging` for later code releases. The release script validates local configuration, builds, reads only the remote secret names, and deploys only `--env staging`. Missing config or secret names stop before deployment.
 5. Check the deployed Worker URL and Workers Logs/Traces. Confirm source-mapped stacks identify the original TypeScript source. Run the smoke checks below before accepting the staging release.
 

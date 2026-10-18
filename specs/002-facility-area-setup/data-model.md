@@ -39,6 +39,17 @@ Representa una zona, piso o sector delimitado dentro de una instalación física
 | `createdAt` | `string` (ISO 8601) | Obligatorio | Fecha de registro |
 | `updatedAt` | `string` (ISO 8601) | Obligatorio | Fecha de modificación |
 
+### Entidad: `SpaceCategory` (Tipo de espacio)
+Clasifica el espacio operativo asignado a una sesión, independientemente de la regla de cupos de su unidad de negocio. El bootstrap del recinto crea `STD` (“General / Estándar”) con `allocatedSlots` igual a la capacidad física total; otros tipos se mantienen fuera de este alta inicial.
+
+| Campo | Tipo | Restricciones / Reglas | Descripción |
+|---|---|---|---|
+| `id` | `string` | Obligatorio, clave primaria | Identificador del tipo de espacio |
+| `facilityId` | `string` | Obligatorio, referencia a `Facility.id` | Recinto dueño del catálogo |
+| `name` | `string` | Obligatorio | Etiqueta visible en Garita |
+| `code` | `STD \| ACC \| VIP \| OTHER` | Único por recinto | Código estable del tipo |
+| `allocatedSlots` | `number` (int) | Entero no negativo | Cupos asociados al tipo |
+
 ### Entidad: `ParkingSession` (Extensión)
 Representa una estadía vehicular en curso o finalizada. Se amplía para capturar la pertenencia al área física.
 
@@ -68,7 +79,7 @@ Las fechas se interpretan en la zona horaria local de la instalación. Si `endTi
 ## 2. Invariantes del Dominio y Reglas de Negocio
 
 ### Invariante 0: Alta Inicial y Baja Lógica del Recinto
-Un administrador sin recinto asignado puede crear el recinto inicial; su asociación y la creación del recinto deben persistirse atómicamente. Un recinto solo puede desactivarse sin sesiones vehiculares activas. Los registros asociados se conservan y las rutas operativas dejan de servir datos del recinto desactivado.
+Un administrador sin recinto asignado puede crear el recinto inicial; su asociación, la creación del recinto y el tipo `STD` inicial deben persistirse en una sola operación. `STD.allocatedSlots` equivale a `Facility.totalCapacity`. La migración inicializa recintos activos existentes sin `STD` y conserva las categorías presentes. Un recinto solo puede desactivarse sin sesiones vehiculares activas. Los registros asociados se conservan y las rutas operativas dejan de servir datos del recinto desactivado.
 
 ### Invariante 1: Regla de Capacidad Global y Buffer Flotante
 Para cualquier instalación $F$ con capacidad $C_{\text{total}}$ y conjunto de áreas activas $A$:

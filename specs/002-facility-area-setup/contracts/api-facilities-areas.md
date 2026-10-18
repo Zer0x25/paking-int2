@@ -35,6 +35,7 @@ Crea una nueva instalación física de estacionamiento.
     }
   }
   ```
+- El bootstrap crea dentro de la misma operación persistente una categoría `STD` llamada “General / Estándar”, con `allocatedSlots` igual a `facility.totalCapacity`. `GET /api/facilities/:facilityId/catalogs` debe devolverla para la selección requerida en Garita.
 - **Response 400 Bad Request**: Validación Zod fallida.
 - **Response 409 Conflict**: La identidad ya tiene un recinto asignado o una solicitud concurrente completó el bootstrap.
 

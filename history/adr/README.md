@@ -26,3 +26,4 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | [ADR-018](ADR-018-scoped-facility-invalidations.md) | Invalidador de cambios limitado al recinto autenticado | Aceptado | 2026-10-18 |
 | [ADR-019](ADR-019-cloudflare-release-environments.md) | Entornos de release Cloudflare local, staging y producción | Aceptado | 2026-10-18 |
 | [ADR-020](ADR-020-facility-bootstrap-and-logical-deactivation.md) | Bootstrap y baja lógica del recinto | Aceptado | 2026-10-18 |
+| [ADR-021](ADR-021-default-space-category-on-facility-bootstrap.md) | Categoría estándar inicial para recintos nuevos | Aceptado | 2026-10-18 |

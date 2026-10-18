@@ -19,6 +19,9 @@
 
 ### Cobertura de ciclo de vida del recinto (2026-10-18)
 - El administrador autenticado sin recinto asignado puede crear el recinto inicial desde una pantalla de configuración; la operación lo asigna al recinto y mantiene su sesión activa.
+- El alta inicial también crea la categoría de espacio `STD` (“General / Estándar”) con todos los cupos físicos del recinto, para que Garita pueda registrar entradas desde el primer uso.
+- La migración de categorías incorpora esa misma categoría a cada recinto activo existente que aún no tenga `STD`, sin modificar categorías ya configuradas.
+- El tipo de cuota de una unidad de negocio (garantizada, contractual o dinámica) y el tipo de espacio (por ejemplo, General / Estándar) son datos distintos; el primero define cómo se asignan cupos a la unidad y el segundo se selecciona al admitir un vehículo.
 - Editar modifica los datos del recinto existente. Eliminar significa desactivar lógicamente, conservar el historial y devolver al usuario al inicio de sesión; no se borran físicamente registros.
 - No se puede desactivar un recinto mientras tenga vehículos activos. Una vez desactivado, el recinto deja de aceptar lecturas y escrituras operativas.
 
@@ -41,6 +44,7 @@ Como administrador del sistema, necesito crear y parametrizar la instalación pr
 4. **Given** un administrador autenticado sin recinto asignado, **When** completa y confirma el formulario inicial, **Then** el recinto se persiste en D1, se asigna a su identidad y recibe una sesión actualizada sin tener que iniciar sesión otra vez.
 5. **Given** un recinto sin vehículos activos, **When** el administrador confirma eliminarlo, **Then** se desactiva lógicamente, conserva auditoría y registros históricos, deja de aparecer como recinto operativo y la interfaz vuelve al inicio de sesión.
 6. **Given** un recinto con vehículos activos, **When** el administrador intenta eliminarlo, **Then** la operación se rechaza con una explicación y el recinto permanece activo.
+7. **Given** un administrador que crea el recinto inicial con capacidad de 120 plazas, **When** termina el alta, **Then** la lista de tipos de espacio incluye “General / Estándar” con 120 cupos y permite registrar una entrada sin configurar otro catálogo primero.
 
 ---
 

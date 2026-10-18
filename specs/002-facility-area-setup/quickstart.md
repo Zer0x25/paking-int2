@@ -13,7 +13,8 @@
    - Dirección: "Ruta 68 Km 15"
    - Capacidad Total: `120` plazas.
 4. Verificar que se muestra la tarjeta de la instalación con `120 plazas físicas` y `Buffer general: 120`; en el alta inicial, confirmar que la sesión queda asignada sin volver a iniciar sesión.
-5. Para probar la baja lógica, vaciar primero las sesiones vehiculares, confirmar **Eliminar recinto** y verificar que se conserva el historial y se vuelve al inicio de sesión. Intentar la misma acción con un vehículo activo debe mostrar el bloqueo sin desactivar el recinto.
+5. Abrir Garita y confirmar que “Tipo de espacio” ofrece “General / Estándar” con 120 cupos. Seleccionarlo junto con la unidad y registrar una entrada.
+6. Para probar la baja lógica, vaciar primero las sesiones vehiculares, confirmar **Eliminar recinto** y verificar que se conserva el historial y se vuelve al inicio de sesión. Intentar la misma acción con un vehículo activo debe mostrar el bloqueo sin desactivar el recinto.
 
 ---
 

@@ -59,6 +59,10 @@ async function createUnassignedAdmin(): Promise<{ userId: string; token: string 
 
 async function insertCategory(facilityId: string): Promise<string> {
   const database = getD1Database();
+  const existing = await database.prepare(
+    "SELECT id FROM space_categories WHERE facility_id = ? AND code = 'STD' LIMIT 1",
+  ).bind(facilityId).first<{ id: string }>();
+  if (existing) return existing.id;
   const categoryId = `cat-${crypto.randomUUID()}`;
   await database.prepare(
     "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) VALUES (?, ?, ?, ?, ?)",
@@ -198,9 +202,13 @@ describe("Configuration persistence through the Worker API", () => {
     expect(token).toBeTruthy();
     expect(await getD1Database().prepare("SELECT facility_id FROM users WHERE id = ?")
       .bind(userId).first<{ facility_id: string }>()).toEqual({ facility_id: facility.id });
-    expect((await workerFetch(`/api/facilities/${facility.id}/catalogs`, { headers: jsonHeaders(token) })).status).toBe(200);
+    const catalogs = await workerFetch(`/api/facilities/${facility.id}/catalogs`, { headers: jsonHeaders(token) });
+    expect(catalogs.status).toBe(200);
+    const { categories } = await catalogs.json() as { categories: { id: string; name: string; code: string; allocatedSlots: number }[] };
+    expect(categories).toEqual([expect.objectContaining({ name: "General / Estándar", code: "STD", allocatedSlots: 20 })]);
 
-    const categoryId = await insertCategory(facility.id);
+    const categoryId = categories[0]?.id;
+    expect(categoryId).toBeTruthy();
     const unitResponse = await workerFetch(`/api/facilities/${facility.id}/business-units`, {
       method: "POST",
       headers: jsonHeaders(token),
