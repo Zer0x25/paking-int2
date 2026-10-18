@@ -42,7 +42,7 @@ async function seedOperationalFixture(facilityId: string, capacity: number): Pro
   ).bind(facilityId, "Session persistence fixture", "", capacity, 1, now, now).run();
   await database.prepare(
     "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) VALUES (?, ?, ?, ?, ?)",
-  ).bind(`cat-${facilityId}`, facilityId, "Standard", "STD", 0).run();
+  ).bind(`cat-${facilityId}`, facilityId, "Standard", "STD", capacity).run();
   await database.prepare(
     "INSERT INTO business_units (id, facility_id, name, code, priority_level, quota_type, default_quota, is_active, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(`unit-${facilityId}`, facilityId, "Hotel", "HTL", 3, "dynamic", capacity, 1, 1).run();
@@ -147,6 +147,7 @@ describe("Parking session persistence through the Worker API", () => {
 
     const database = getD1Database();
     await database.prepare("UPDATE facilities SET total_capacity = 10, version = version + 1 WHERE id = ?").bind(facilityId).run();
+    await database.prepare("UPDATE space_categories SET allocated_slots = 10 WHERE facility_id = ? AND code = 'STD'").bind(facilityId).run();
     await database.exec("CREATE TRIGGER fail_session_audit BEFORE INSERT ON audit_logs BEGIN SELECT RAISE(ABORT, 'test audit failure'); END");
     const failedId = `session-${crypto.randomUUID()}`;
     try {

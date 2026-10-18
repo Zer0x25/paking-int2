@@ -45,6 +45,8 @@ const areas = [
     code: "SUB",
     description: "Nivel -1",
     allocatedCapacity: 40,
+    standardCapacity: 40,
+    accessibleCapacity: 0,
     businessUnitId: null,
     isActive: true,
     version: 1,
@@ -57,7 +59,9 @@ const areas = [
     name: "Terraza",
     code: "TER",
     description: "Nivel 2",
-    allocatedCapacity: 20,
+    allocatedCapacity: 5,
+    standardCapacity: 0,
+    accessibleCapacity: 5,
     businessUnitId: null,
     isActive: true,
     version: 1,
@@ -289,6 +293,7 @@ describe("flujo guiado de garita", () => {
     expect(screen.getByRole("button", { name: /confirmar entrada/i })).toBeTruthy();
     expect(hasRequestValue("unit-events")).toBe(false);
     selectEntryDestination();
+    expect(screen.getByText(/Disponibles en el área: 5 Accesibles/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /confirmar entrada/i }));
 
@@ -298,6 +303,48 @@ describe("flujo guiado de garita", () => {
       expect(hasRequestValue("area-terrace")).toBe(true);
       expect(hasRequestValue("AA-1A-11") || hasRequestValue("AA1A11")).toBe(true);
     });
+  });
+
+  it("offers an alternative area with Accessible capacity and lets the operator select it", async () => {
+    await renderGate();
+    enterPlate("AA1A11");
+    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    fireEvent.change(screen.getByLabelText(/unidad/i), { target: { value: "unit-events" } });
+    fireEvent.change(screen.getByLabelText(/tipo de espacio/i), { target: { value: "space-accessible" } });
+    fireEvent.change(screen.getByLabelText(/área|sector/i), { target: { value: "area-basement" } });
+    writeFailure = () => {
+      writeFailure = null;
+      return jsonResponse({ error: "El área no tiene plazas Accesibles disponibles.", suggestedParkingAreaId: "area-terrace" }, 409);
+    };
+
+    fireEvent.click(screen.getByRole("button", { name: /confirmar entrada/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /usar área Terraza/i }));
+
+    expect((screen.getByLabelText(/área|sector/i) as HTMLSelectElement).value).toBe("area-terrace");
+    fireEvent.click(screen.getByRole("button", { name: /confirmar entrada/i }));
+    await waitFor(() => expect(hasRequestValue("area-terrace")).toBe(true));
+  });
+
+  it("requires explicit confirmation before using Standard after Accessible capacity is exhausted", async () => {
+    await renderGate();
+    enterPlate("AA1A11");
+    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    selectEntryDestination();
+    writeFailure = () => {
+      writeFailure = null;
+      return jsonResponse({
+        error: "La capacidad Accesible está agotada en el recinto; puede elegir una plaza Estándar disponible.",
+        allowStandardFallback: true,
+      }, 409);
+    };
+
+    fireEvent.click(screen.getByRole("button", { name: /confirmar entrada/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /usar una plaza estándar/i }));
+    expect(screen.getByRole("alert").textContent).toMatch(/plaza Estándar/i);
+    fireEvent.click(screen.getByRole("button", { name: /confirmar entrada estándar/i }));
+
+    await waitFor(() => expect(activeSessions).toHaveLength(1));
+    expect(activeSessions[0].spaceCategoryId).toBe("space-standard");
   });
 
   it("registers entry in browsers with getRandomValues but without randomUUID", async () => {

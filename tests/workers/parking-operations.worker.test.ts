@@ -1,5 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
+import type { BusinessUnit, Facility } from "../../src/core/types/schema";
+import { checkAllocationAvailability } from "../../src/server/services/allocation-service";
 import { applyD1Migrations, getD1Database, workerFetch } from "./support/d1-fixture";
 const readJson = async <T>(response: Response): Promise<T> => await response.json() as T;
 const bindings = env as unknown as Record<string, unknown>;
@@ -20,12 +22,27 @@ beforeAll(async () => {
   await database.prepare("INSERT OR IGNORE INTO facilities (id, name, address, total_capacity, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .bind("fac-default-01", "Worker test facility", "", 100, 1, now, now).run();
   await database.prepare("INSERT OR IGNORE INTO space_categories (id, facility_id, name, code, allocated_slots) VALUES (?, ?, ?, ?, ?)")
-    .bind("cat-std", "fac-default-01", "Standard", "STD", 0).run();
+    .bind("cat-std", "fac-default-01", "Standard", "STD", 90).run();
+  await database.prepare("INSERT OR IGNORE INTO space_categories (id, facility_id, name, code, allocated_slots) VALUES (?, ?, ?, ?, ?)")
+    .bind("cat-acc", "fac-default-01", "Accesible", "ACC", 10).run();
   await database.prepare("INSERT OR IGNORE INTO business_units (id, facility_id, name, code, priority_level, quota_type, default_quota, is_active, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
     .bind("bu-hotel-01", "fac-default-01", "Hotel", "HOTEL", 1, "guaranteed", 40, 1, 1).run();
 });
 
 describe("Gate operations in the Cloudflare Worker runtime", () => {
+  it("keeps legacy allocation callers working when no physical category is supplied", () => {
+    const facility: Facility = {
+      id: "legacy-allocation-facility", name: "Legacy fixture", address: "", totalCapacity: 10,
+      createdAt: "2026-10-18T12:00:00.000Z", updatedAt: "2026-10-18T12:00:00.000Z",
+    };
+    const businessUnit: BusinessUnit = {
+      id: "legacy-allocation-unit", facilityId: facility.id, name: "General", code: "GEN",
+      priorityLevel: 1, quotaType: "dynamic", defaultQuota: 0, isActive: true, version: 1,
+    };
+    expect(checkAllocationAvailability({ facility, businessUnits: [businessUnit], events: [], activeSessions: [], areas: [] }, businessUnit.id))
+      .toMatchObject({ allowed: true });
+  });
+
   it("authenticates and processes entry, plate correction, quick exit, and offline sync", async () => {
     const loginResponse = await workerFetch("/api/auth/login", {
       method: "POST",
@@ -117,5 +134,85 @@ describe("Gate operations in the Cloudflare Worker runtime", () => {
 
     const listedAfterExit = await workerFetch(`/api/parking-sessions/active?facilityId=${facilityId}`, { headers: authHeaders });
     expect((await readJson<{ sessions: { id: string }[] }>(listedAfterExit)).sessions.map((session) => session.id)).not.toContain(offlineEntryId);
+  });
+
+  it("protects Accessible-only areas from Standard entries and rejects legacy categories in offline sync", async () => {
+    const loginResponse = await workerFetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: bindings.OPERATOR_USERNAME, password: bindings.OPERATOR_PASSWORD }),
+    });
+    const { token } = await readJson<{ token: string }>(loginResponse);
+    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const facilityId = "fac-default-01";
+    const areaId = `accessible-only-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const database = getD1Database();
+    await database.prepare(
+      "INSERT INTO parking_areas (id, facility_id, name, code, description, allocated_capacity, standard_capacity, accessible_capacity, business_unit_id, is_active, version, created_at, updated_at) VALUES (?, ?, 'Accessible only', ?, '', 1, 0, 1, NULL, 1, 1, ?, ?)",
+    ).bind(areaId, facilityId, `AC${crypto.randomUUID().slice(0, 5)}`, now, now).run();
+
+    const standardEntryId = `standard-on-accessible-${crypto.randomUUID()}`;
+    const standardEntry = await workerFetch("/api/parking-sessions/entry", {
+      method: "POST", headers: authHeaders,
+      body: JSON.stringify({ id: standardEntryId, facilityId, businessUnitId: "bu-hotel-01", spaceCategoryId: "cat-std", parkingAreaId: areaId, licensePlate: "AB1C23" }),
+    });
+    expect(standardEntry.status).toBe(409);
+    expect(await database.prepare("SELECT id FROM parking_sessions WHERE id = ?").bind(standardEntryId).first()).toBeNull();
+
+    const accessibleEntryId = `accessible-entry-${crypto.randomUUID()}`;
+    const accessibleEntry = await workerFetch("/api/parking-sessions/entry", {
+      method: "POST", headers: authHeaders,
+      body: JSON.stringify({ id: accessibleEntryId, facilityId, businessUnitId: "bu-hotel-01", spaceCategoryId: "cat-acc", parkingAreaId: areaId, licensePlate: "CC2D34" }),
+    });
+    expect(accessibleEntry.status).toBe(201);
+    const session = await accessibleEntry.json() as { session: { version: number } };
+    await workerFetch(`/api/parking-sessions/${accessibleEntryId}/exit`, {
+      method: "POST", headers: authHeaders,
+      body: JSON.stringify({ facilityId, expectedVersion: session.session.version }),
+    });
+
+    await database.prepare("INSERT OR IGNORE INTO space_categories (id, facility_id, name, code, allocated_slots) VALUES ('cat-vip-test', ?, 'Legacy VIP', 'VIP', 0)")
+      .bind(facilityId).run();
+    const legacyMutationId = `legacy-sync-${crypto.randomUUID()}`;
+    const sync = await workerFetch("/api/sync/delta", {
+      method: "POST", headers: authHeaders,
+      body: JSON.stringify({
+        facilityId, deviceId: "worker-test-gate",
+        mutations: [{
+          id: legacyMutationId, type: "VEHICLE_ENTRY",
+          payload: { facilityId, businessUnitId: "bu-hotel-01", spaceCategoryId: "cat-vip-test", licensePlate: "EE5F67" },
+          clientTimestamp: now, deviceId: "worker-test-gate", status: "pending", retryCount: 0,
+        }],
+      }),
+    });
+    expect(sync.status).toBe(200);
+    expect(await readJson<{ conflicts: { mutationId: string; reason: string }[] }>(sync)).toMatchObject({
+      conflicts: [expect.objectContaining({ mutationId: legacyMutationId, reason: expect.stringMatching(/estándar o accesibles/i) })],
+    });
+    expect(await database.prepare("SELECT id FROM parking_sessions WHERE license_plate = 'EE5F67' AND status = 'active'").first()).toBeNull();
+
+    const targetAreaId = `no-accessible-${crypto.randomUUID()}`;
+    const alternativeAreaId = `has-accessible-${crypto.randomUUID()}`;
+    await database.prepare(
+      "INSERT INTO parking_areas (id, facility_id, name, code, description, allocated_capacity, standard_capacity, accessible_capacity, business_unit_id, is_active, version, created_at, updated_at) VALUES (?, ?, 'General area', ?, '', 1, 1, 0, NULL, 1, 1, ?, ?)",
+    ).bind(targetAreaId, facilityId, `GN${crypto.randomUUID().slice(0, 5)}`, now, now).run();
+    await database.prepare(
+      "INSERT INTO parking_areas (id, facility_id, name, code, description, allocated_capacity, standard_capacity, accessible_capacity, business_unit_id, is_active, version, created_at, updated_at) VALUES (?, ?, 'Accessible area', ?, '', 1, 0, 1, NULL, 1, 1, ?, ?)",
+    ).bind(alternativeAreaId, facilityId, `AC${crypto.randomUUID().slice(0, 5)}`, now, now).run();
+    const areaSuggestion = await workerFetch("/api/parking-sessions/entry", {
+      method: "POST", headers: authHeaders,
+      body: JSON.stringify({ facilityId, businessUnitId: "bu-hotel-01", spaceCategoryId: "cat-acc", parkingAreaId: targetAreaId, licensePlate: "GG7H89" }),
+    });
+    expect(areaSuggestion.status).toBe(409);
+    expect(await readJson<{ suggestedParkingAreaId: string }>(areaSuggestion)).toMatchObject({ suggestedParkingAreaId: alternativeAreaId });
+
+    await database.prepare("UPDATE space_categories SET allocated_slots = 0 WHERE facility_id = ? AND code = 'ACC'").bind(facilityId).run();
+    const standardFallback = await workerFetch("/api/parking-sessions/entry", {
+      method: "POST", headers: authHeaders,
+      body: JSON.stringify({ facilityId, businessUnitId: "bu-hotel-01", spaceCategoryId: "cat-acc", licensePlate: "HH8J90" }),
+    });
+    expect(standardFallback.status).toBe(409);
+    expect(await readJson<{ allowStandardFallback: boolean }>(standardFallback)).toMatchObject({ allowStandardFallback: true });
   });
 });

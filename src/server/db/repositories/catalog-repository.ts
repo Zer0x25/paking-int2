@@ -74,7 +74,7 @@ function facilityCatalogStatements(database: AppD1Database, facilityId: string) 
     database.prepare("SELECT id, name, address, total_capacity, version, created_at, updated_at FROM facilities WHERE id = ? AND is_active = 1 LIMIT 1").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, allocated_slots FROM space_categories WHERE facility_id = ? ORDER BY code").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, priority_level, quota_type, default_quota, is_active, version FROM business_units WHERE facility_id = ? ORDER BY priority_level, name").bind(facilityId),
-    database.prepare("SELECT id, facility_id, name, code, description, allocated_capacity, business_unit_id, is_active, version, created_at, updated_at FROM parking_areas WHERE facility_id = ? ORDER BY name").bind(facilityId),
+    database.prepare("SELECT id, facility_id, name, code, description, allocated_capacity, standard_capacity, accessible_capacity, business_unit_id, is_active, version, created_at, updated_at FROM parking_areas WHERE facility_id = ? ORDER BY name").bind(facilityId),
     database.prepare("SELECT id, facility_id, business_unit_id, title, reserved_slots, start_time, end_time, status, version FROM event_bookings WHERE facility_id = ? ORDER BY start_time").bind(facilityId),
   ];
 }
@@ -123,10 +123,13 @@ export async function createFacilityRecord(
   actor: Actor,
 ): Promise<Facility> {
   const database = requireD1(bindings);
-  const facility: Facility = input;
+  const facility: Facility = { ...input, address: input.address ?? "" };
   const auditId = crypto.randomUUID();
-  const categoryId = crypto.randomUUID();
-  const auditDetails = JSON.stringify({ facility });
+  const standardCategoryId = crypto.randomUUID();
+  const accessibleCategoryId = crypto.randomUUID();
+  const accessibleCapacity = input.accessibleCapacity ?? 0;
+  const standardCapacity = input.totalCapacity - accessibleCapacity;
+  const auditDetails = JSON.stringify({ facility, standardCapacity, accessibleCapacity });
   const results = await database.batch([
     database.prepare(
       "INSERT INTO facilities (id, name, address, total_capacity, version, created_at, updated_at) SELECT ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND role = 'admin' AND facility_id IS NULL)",
@@ -136,14 +139,17 @@ export async function createFacilityRecord(
     ).bind(input.id, actor.userId, input.id),
     database.prepare("DELETE FROM facilities WHERE id = ? AND changes() = 0").bind(input.id),
     database.prepare(
-      "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) SELECT ?, ?, 'General / Estándar', 'STD', total_capacity FROM facilities WHERE id = ? AND is_active = 1 AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?)",
-    ).bind(categoryId, input.id, input.id, actor.userId, input.id),
+      "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) SELECT ?, ?, 'General / Estándar', 'STD', ? FROM facilities WHERE id = ? AND is_active = 1 AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?)",
+    ).bind(standardCategoryId, input.id, standardCapacity, input.id, actor.userId, input.id),
     database.prepare(
-      "INSERT INTO audit_logs (id, user_id, facility_id, action, entity_type, entity_id, details_json, mutation_id, created_at) SELECT ?, ?, ?, 'created', 'facility', ?, ?, NULL, ? WHERE EXISTS (SELECT 1 FROM facilities WHERE id = ? AND is_active = 1) AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?) AND EXISTS (SELECT 1 FROM space_categories WHERE facility_id = ? AND code = 'STD')",
-    ).bind(auditId, actor.userId, input.id, input.id, auditDetails, input.createdAt, input.id, actor.userId, input.id, input.id),
+      "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) SELECT ?, ?, 'Accesible', 'ACC', ? FROM facilities WHERE id = ? AND is_active = 1 AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?)",
+    ).bind(accessibleCategoryId, input.id, accessibleCapacity, input.id, actor.userId, input.id),
+    database.prepare(
+      "INSERT INTO audit_logs (id, user_id, facility_id, action, entity_type, entity_id, details_json, mutation_id, created_at) SELECT ?, ?, ?, 'created', 'facility', ?, ?, NULL, ? WHERE EXISTS (SELECT 1 FROM facilities WHERE id = ? AND is_active = 1) AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?) AND EXISTS (SELECT 1 FROM space_categories WHERE facility_id = ? AND code = 'STD') AND EXISTS (SELECT 1 FROM space_categories WHERE facility_id = ? AND code = 'ACC')",
+    ).bind(auditId, actor.userId, input.id, input.id, auditDetails, input.createdAt, input.id, actor.userId, input.id, input.id, input.id),
   ]);
   const changes = results.map(rowChanges);
-  if (results.length !== 5 || changes[0] !== 1 || changes[1] !== 1 || changes[2] !== 0 || changes[3] !== 1 || changes[4] !== 1) {
+  if (results.length !== 6 || changes[0] !== 1 || changes[1] !== 1 || changes[2] !== 0 || changes[3] !== 1 || changes[4] !== 1 || changes[5] !== 1) {
     throw new PersistenceConflictError("La identidad ya tiene un recinto asignado o el alta se procesó en otra solicitud");
   }
   return facility;
@@ -156,6 +162,7 @@ export async function updateFacilityRecord(
     expectedVersion: number;
     updates: UpdateFacilityInput;
     current: Facility;
+    currentAccessibleCapacity: number;
     actor: Actor;
     activeSessions: ParkingSession[];
     areas: ParkingArea[];
@@ -168,6 +175,8 @@ export async function updateFacilityRecord(
     address: input.updates.address ?? input.current.address,
     updatedAt: new Date().toISOString(),
   };
+  const accessibleCapacity = input.updates.accessibleCapacity ?? input.currentAccessibleCapacity;
+  const standardCapacity = updated.totalCapacity - accessibleCapacity;
   const nextVersion = input.expectedVersion + 1;
   await commitFacilityMutation(database, {
     facilityId: input.facilityId,
@@ -184,13 +193,33 @@ export async function updateFacilityRecord(
         input.facilityId,
         nextVersion,
       ),
+      updateWhenFacilityVersionMatches(
+        database,
+        "space_categories",
+        ["allocated_slots = ?"],
+        [standardCapacity],
+        "facility_id = ? AND code = 'STD'",
+        [input.facilityId],
+        input.facilityId,
+        nextVersion,
+      ),
+      updateWhenFacilityVersionMatches(
+        database,
+        "space_categories",
+        ["allocated_slots = ?"],
+        [accessibleCapacity],
+        "facility_id = ? AND code = 'ACC'",
+        [input.facilityId],
+        input.facilityId,
+        nextVersion,
+      ),
       createAuditStatement(database, {
         userId: input.actor.userId,
         facilityId: input.facilityId,
         action: "updated",
         entityType: "facility",
         entityId: input.facilityId,
-        details: { before: input.current, after: updated },
+        details: { before: input.current, after: updated, beforeAccessibleCapacity: input.currentAccessibleCapacity, afterAccessibleCapacity: accessibleCapacity },
         createdAt: updated.updatedAt,
       }, nextVersion),
     ],
@@ -253,8 +282,8 @@ export async function createAreaRecord(
     updatedAt: area.updatedAt,
     statements: [
       insertWhenFacilityVersionMatches(database, "parking_areas",
-        ["id", "facility_id", "name", "code", "description", "allocated_capacity", "business_unit_id", "is_active", "version", "created_at", "updated_at"],
-        [area.id, area.facilityId, area.name, area.code, area.description, area.allocatedCapacity, area.businessUnitId, 1, area.version, area.createdAt, area.updatedAt], area.facilityId, nextVersion),
+        ["id", "facility_id", "name", "code", "description", "allocated_capacity", "standard_capacity", "accessible_capacity", "business_unit_id", "is_active", "version", "created_at", "updated_at"],
+        [area.id, area.facilityId, area.name, area.code, area.description, area.allocatedCapacity, area.standardCapacity ?? area.allocatedCapacity, area.accessibleCapacity ?? 0, area.businessUnitId, 1, area.version, area.createdAt, area.updatedAt], area.facilityId, nextVersion),
       createAuditStatement(database, { userId: actor.userId, facilityId: area.facilityId, action: "created", entityType: "parking_area", entityId: area.id, details: { area }, createdAt: area.createdAt }, nextVersion),
     ],
   });
@@ -275,8 +304,8 @@ export async function updateAreaRecord(
     preconditionValues: [area.id, area.facilityId, expectedVersion],
     statements: [
       updateWhenFacilityVersionMatches(database, "parking_areas",
-        ["name = ?", "code = ?", "description = ?", "allocated_capacity = ?", "business_unit_id = ?", "is_active = ?", "version = ?", "updated_at = ?"],
-        [area.name, area.code, area.description, area.allocatedCapacity, area.businessUnitId, area.isActive ? 1 : 0, area.version, area.updatedAt],
+        ["name = ?", "code = ?", "description = ?", "allocated_capacity = ?", "standard_capacity = ?", "accessible_capacity = ?", "business_unit_id = ?", "is_active = ?", "version = ?", "updated_at = ?"],
+        [area.name, area.code, area.description, area.allocatedCapacity, area.standardCapacity ?? area.allocatedCapacity, area.accessibleCapacity ?? 0, area.businessUnitId, area.isActive ? 1 : 0, area.version, area.updatedAt],
         "id = ? AND facility_id = ? AND version = ?", [area.id, area.facilityId, expectedVersion], area.facilityId, nextVersion),
       createAuditStatement(database, { userId: actor.userId, facilityId: area.facilityId, action: area.isActive === before.isActive ? "updated" : "deactivated", entityType: "parking_area", entityId: area.id, details: { before, after: area }, createdAt: area.updatedAt }, nextVersion),
     ],

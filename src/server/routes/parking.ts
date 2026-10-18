@@ -76,8 +76,12 @@ parkingRoutes.post("/entry", async (c) => {
   try {
     const snapshot = await loadFacilitySnapshot(c.env, data.facilityId);
     if (!snapshot) return c.json({ error: `Instalación "${data.facilityId}" no encontrada` }, 404);
-    if (!snapshot.categories.some((category) => category.id === data.spaceCategoryId)) {
+    const selectedCategory = snapshot.categories.find((category) => category.id === data.spaceCategoryId);
+    if (!selectedCategory) {
       return c.json({ error: "Categoría de estacionamiento no reconocida en la instalación" }, 409);
+    }
+    if (selectedCategory.code !== "STD" && selectedCategory.code !== "ACC") {
+      return c.json({ error: "Solo se admiten espacios Estándar o Accesibles para nuevas entradas" }, 409);
     }
     if (data.parkingAreaId) {
       const area = snapshot.areas.find((item) => item.id === data.parkingAreaId);
@@ -87,8 +91,12 @@ parkingRoutes.post("/entry", async (c) => {
     const existing = await findActiveSessionByPlate(c.env, data.facilityId, plate);
     if (existing) return c.json({ error: `El vehículo con patente ${plate} ya se encuentra activo adentro` }, 409);
 
-    const allocation = checkAllocationAvailability(snapshot, data.businessUnitId, data.parkingAreaId);
-    if (!allocation.allowed) return c.json({ error: allocation.reason }, 409);
+    const allocation = checkAllocationAvailability(snapshot, data.businessUnitId, data.parkingAreaId, selectedCategory.code);
+    if (!allocation.allowed) return c.json({
+      error: allocation.reason,
+      ...(allocation.suggestedParkingAreaId ? { suggestedParkingAreaId: allocation.suggestedParkingAreaId } : {}),
+      ...(allocation.allowStandardFallback ? { allowStandardFallback: true } : {}),
+    }, 409);
 
     const session = createParkingSession({
       id: data.id,

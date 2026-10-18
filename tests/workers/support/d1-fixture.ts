@@ -112,20 +112,36 @@ function splitSqlStatements(source: string): string[] {
   return statements;
 }
 
-export async function applyD1Migrations(database = getD1Database()): Promise<void> {
+export async function applyD1Migrations(
+  database = getD1Database(),
+  throughMigration?: string,
+): Promise<void> {
   await database.exec("CREATE TABLE IF NOT EXISTS __vitest_d1_migrations (name TEXT PRIMARY KEY)");
 
-  for (const [path, sql] of Object.entries(migrations).sort(([left], [right]) => left.localeCompare(right))) {
+  const orderedMigrations = Object.entries(migrations).sort(([left], [right]) => left.localeCompare(right));
+  let migrationFound = throughMigration === undefined;
+  for (const [path, sql] of orderedMigrations) {
     const applied = await database.prepare(
       "SELECT name FROM __vitest_d1_migrations WHERE name = ?",
     ).bind(path).first();
-    if (applied) continue;
+    if (applied) {
+      if (throughMigration && path.endsWith(throughMigration)) {
+        migrationFound = true;
+        break;
+      }
+      continue;
+    }
 
     for (const statement of splitSqlStatements(sql)) {
       await database.prepare(statement).run();
     }
     await database.prepare("INSERT INTO __vitest_d1_migrations (name) VALUES (?)").bind(path).run();
+    if (throughMigration && path.endsWith(throughMigration)) {
+      migrationFound = true;
+      break;
+    }
   }
+  if (!migrationFound) throw new Error(`Migration ${throughMigration} was not found in the Worker migration directory`);
 }
 
 export async function applyLocalCatalogSeed(database = getD1Database()): Promise<void> {

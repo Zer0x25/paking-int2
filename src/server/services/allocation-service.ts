@@ -9,6 +9,7 @@ import type {
   EventBooking,
   ParkingSession,
   ParkingArea,
+  SpaceCategory,
 } from "@core/types/schema";
 
 export interface AllocationSnapshot {
@@ -17,13 +18,15 @@ export interface AllocationSnapshot {
   events: EventBooking[];
   activeSessions: ParkingSession[];
   areas: ParkingArea[];
+  categories?: SpaceCategory[];
 }
 
 export function checkAllocationAvailability(
   snapshot: AllocationSnapshot,
   businessUnitId: string,
   parkingAreaId?: string | null,
-): { allowed: boolean; reason?: string } {
+  spaceCategoryCode?: "STD" | "ACC",
+): { allowed: boolean; reason?: string; suggestedParkingAreaId?: string; allowStandardFallback?: boolean } {
   const businessUnit = snapshot.businessUnits.find(
     (unit) => unit.id === businessUnitId && unit.facilityId === snapshot.facility.id,
   );
@@ -33,7 +36,9 @@ export function checkAllocationAvailability(
   return canAdmitVehicle({
     ...snapshot,
     businessUnit,
+    spaceCategories: snapshot.categories ?? [],
     ...(parkingAreaId ? { parkingAreaId } : {}),
+    ...(spaceCategoryCode ? { spaceCategoryCode } : {}),
   });
 }
 

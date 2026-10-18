@@ -59,7 +59,7 @@ async function seedOperationalFixture(facilityId: string, capacity = 20): Promis
   ).bind(facilityId, "Sync persistence fixture", "", capacity, 1, now, now).run();
   await database.prepare(
     "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) VALUES (?, ?, ?, ?, ?)",
-  ).bind(`cat-${facilityId}`, facilityId, "Standard", "STD", 0).run();
+  ).bind(`cat-${facilityId}`, facilityId, "Standard", "STD", capacity).run();
   await database.prepare(
     "INSERT INTO business_units (id, facility_id, name, code, priority_level, quota_type, default_quota, is_active, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(`unit-${facilityId}`, facilityId, "Hotel", "HTL", 3, "dynamic", capacity, 1, 1).run();

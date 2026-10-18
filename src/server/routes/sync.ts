@@ -60,8 +60,12 @@ syncRoutes.post("/delta", async (c) => {
       if (mutation.type === "VEHICLE_ENTRY") {
         const payload = mutation.payload;
         const plate = normalizeLicensePlate(payload.licensePlate);
-        if (!snapshot.categories.some((category) => category.id === payload.spaceCategoryId)) {
+        const selectedCategory = snapshot.categories.find((category) => category.id === payload.spaceCategoryId);
+        if (!selectedCategory) {
           throw new SyncRuleConflict("Categoría de estacionamiento no reconocida en la instalación");
+        }
+        if (selectedCategory.code !== "STD" && selectedCategory.code !== "ACC") {
+          throw new SyncRuleConflict("Solo se admiten espacios Estándar o Accesibles para nuevas entradas");
         }
         if (payload.parkingAreaId) {
           const area = snapshot.areas.find((item) => item.id === payload.parkingAreaId);
@@ -70,7 +74,7 @@ syncRoutes.post("/delta", async (c) => {
         if (await findActiveSessionByPlate(c.env, facilityId, plate)) {
           throw new SyncRuleConflict(`Vehículo ${plate} ya se encuentra registrado activamente`);
         }
-        const allocation = checkAllocationAvailability(snapshot, payload.businessUnitId, payload.parkingAreaId);
+        const allocation = checkAllocationAvailability(snapshot, payload.businessUnitId, payload.parkingAreaId, selectedCategory.code);
         if (!allocation.allowed) throw new SyncRuleConflict(allocation.reason ?? "No hay capacidad disponible");
         const session = createParkingSession({
           id: mutation.id,

@@ -116,4 +116,34 @@ describe("User Story 3: Dashboard Metrics & Alert Thresholds (TDD)", () => {
     expect(metrics.occupancyPercentage).toBe(100);
     expect(metrics.alertLevel).toBe("critical");
   });
+
+  it("reports Standard and Accessible capacity and occupancy for facility and areas", () => {
+    const sessions: ParkingSession[] = [
+      { id: "std", facilityId: facility.id, businessUnitId: "bu-hotel", spaceCategoryId: "cat-std", parkingAreaId: "area-1", licensePlate: "AA11BB", entryTime: "2026-10-18T12:00:00Z", exitTime: null, status: "active", durationMinutes: null, operatorUserId: "op", deviceId: "gate", version: 1 },
+      { id: "acc", facilityId: facility.id, businessUnitId: "bu-hotel", spaceCategoryId: "cat-acc", parkingAreaId: "area-1", licensePlate: "CC22DD", entryTime: "2026-10-18T12:00:00Z", exitTime: null, status: "active", durationMinutes: null, operatorUserId: "op", deviceId: "gate", version: 1 },
+    ];
+    const metrics = computeDashboardMetrics({
+      facility: { ...facility, totalCapacity: 35 },
+      businessUnits: [],
+      activeSessions: sessions,
+      spaceCategories: [
+        { id: "cat-std", facilityId: facility.id, name: "Estándar", code: "STD", allocatedSlots: 33 },
+        { id: "cat-acc", facilityId: facility.id, name: "Accesible", code: "ACC", allocatedSlots: 2 },
+      ],
+      areas: [{
+        id: "area-1", facilityId: facility.id, name: "North", code: "N", description: "",
+        allocatedCapacity: 21, standardCapacity: 20, accessibleCapacity: 1, businessUnitId: null,
+        isActive: true, version: 1, createdAt: "2026-10-18T12:00:00Z", updatedAt: "2026-10-18T12:00:00Z",
+      }],
+    });
+
+    expect(metrics).toMatchObject({
+      standardCapacity: 33, standardOccupied: 1, standardAvailable: 32,
+      accessibleCapacity: 2, accessibleOccupied: 1, accessibleAvailable: 1,
+    });
+    expect(metrics.areas[0]).toMatchObject({
+      standardCapacity: 20, standardOccupied: 1, standardAvailable: 19,
+      accessibleCapacity: 1, accessibleOccupied: 1, accessibleAvailable: 0,
+    });
+  });
 });

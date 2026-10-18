@@ -251,4 +251,102 @@ describe("User Story 2: Dynamic Quota Allocation Engine (TDD)", () => {
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain("no reconocida");
   });
+
+  it("reserves type-specific area capacity and admits only from the matching floating buffer", () => {
+    const categories = [
+      { id: "cat-std", facilityId: facility.id, name: "Estándar", code: "STD" as const, allocatedSlots: 2 },
+      { id: "cat-acc", facilityId: facility.id, name: "Accesible", code: "ACC" as const, allocatedSlots: 1 },
+    ];
+    const area = {
+      id: "area-1", facilityId: facility.id, name: "North", code: "N", description: "",
+      allocatedCapacity: 2, standardCapacity: 1, accessibleCapacity: 1, businessUnitId: null,
+      isActive: true, version: 1, createdAt: "2026-10-15T00:00:00Z", updatedAt: "2026-10-15T00:00:00Z",
+    };
+    const activeAccessible: ParkingSession = {
+      id: "acc-session", facilityId: facility.id, businessUnitId: restaurantUnit.id,
+      spaceCategoryId: "cat-acc", parkingAreaId: area.id, licensePlate: "AA11BB",
+      entryTime: "2026-10-15T15:00:00Z", exitTime: null, status: "active", durationMinutes: null,
+      operatorUserId: "op1", deviceId: "gate1", version: 1,
+    };
+
+    const standardFromFloating = canAdmitVehicle({
+      facility: { ...facility, totalCapacity: 3 }, businessUnit: restaurantUnit,
+      businessUnits: [restaurantUnit], events: [], activeSessions: [activeAccessible], areas: [area],
+      spaceCategories: categories, spaceCategoryCode: "STD",
+    });
+    const accessibleFromExhaustedArea = canAdmitVehicle({
+      facility: { ...facility, totalCapacity: 3 }, businessUnit: restaurantUnit,
+      businessUnits: [restaurantUnit], events: [], activeSessions: [activeAccessible], areas: [area],
+      spaceCategories: categories, parkingAreaId: area.id, spaceCategoryCode: "ACC",
+    });
+
+    expect(standardFromFloating).toMatchObject({ allowed: true });
+    expect(accessibleFromExhaustedArea).toMatchObject({ allowed: false, allowStandardFallback: true });
+    expect(accessibleFromExhaustedArea.reason).toMatch(/accesible/i);
+  });
+
+  it("suggests an alternate area when the selected area has no Accessible spaces", () => {
+    const categories = [
+      { id: "cat-std", facilityId: facility.id, name: "Estándar", code: "STD" as const, allocatedSlots: 2 },
+      { id: "cat-acc", facilityId: facility.id, name: "Accesible", code: "ACC" as const, allocatedSlots: 1 },
+    ];
+    const targetArea = {
+      id: "area-target", facilityId: facility.id, name: "Sector General", code: "GEN", description: "",
+      allocatedCapacity: 1, standardCapacity: 1, accessibleCapacity: 0, businessUnitId: null,
+      isActive: true, version: 1, createdAt: "2026-10-15T00:00:00Z", updatedAt: "2026-10-15T00:00:00Z",
+    };
+    const accessibleArea = {
+      id: "area-accessible", facilityId: facility.id, name: "Sector Accesible", code: "ACC", description: "",
+      allocatedCapacity: 1, standardCapacity: 0, accessibleCapacity: 1, businessUnitId: null,
+      isActive: true, version: 1, createdAt: "2026-10-15T00:00:00Z", updatedAt: "2026-10-15T00:00:00Z",
+    };
+
+    const result = canAdmitVehicle({
+      facility: { ...facility, totalCapacity: 3 }, businessUnit: restaurantUnit,
+      businessUnits: [restaurantUnit], events: [], activeSessions: [], areas: [targetArea, accessibleArea],
+      spaceCategories: categories, parkingAreaId: targetArea.id, spaceCategoryCode: "ACC",
+    });
+
+    expect(result).toMatchObject({ allowed: false, suggestedParkingAreaId: accessibleArea.id });
+    expect(result.reason).toContain("Sector Accesible");
+  });
+
+  it("suggests an Accessible area when the floating buffer is fully assigned", () => {
+    const categories = [
+      { id: "cat-std", facilityId: facility.id, name: "Estándar", code: "STD" as const, allocatedSlots: 2 },
+      { id: "cat-acc", facilityId: facility.id, name: "Accesible", code: "ACC" as const, allocatedSlots: 1 },
+    ];
+    const accessibleArea = {
+      id: "area-accessible", facilityId: facility.id, name: "Sector Accesible", code: "ACC", description: "",
+      allocatedCapacity: 1, standardCapacity: 0, accessibleCapacity: 1, businessUnitId: null,
+      isActive: true, version: 1, createdAt: "2026-10-15T00:00:00Z", updatedAt: "2026-10-15T00:00:00Z",
+    };
+    const result = canAdmitVehicle({
+      facility: { ...facility, totalCapacity: 3 }, businessUnit: restaurantUnit,
+      businessUnits: [restaurantUnit], events: [], activeSessions: [], areas: [accessibleArea],
+      spaceCategories: categories, spaceCategoryCode: "ACC",
+    });
+
+    expect(result).toMatchObject({ allowed: false, suggestedParkingAreaId: accessibleArea.id });
+  });
+
+  it("does not offer Standard fallback when Standard itself has no capacity", () => {
+    const categories = [
+      { id: "cat-std", facilityId: facility.id, name: "Estándar", code: "STD" as const, allocatedSlots: 0 },
+      { id: "cat-acc", facilityId: facility.id, name: "Accesible", code: "ACC" as const, allocatedSlots: 1 },
+    ];
+    const activeAccessible: ParkingSession = {
+      id: "acc-session", facilityId: facility.id, businessUnitId: restaurantUnit.id,
+      spaceCategoryId: "cat-acc", licensePlate: "AA11BB", entryTime: "2026-10-15T15:00:00Z",
+      exitTime: null, status: "active", durationMinutes: null, operatorUserId: "op1", deviceId: "gate1", version: 1,
+    };
+    const result = canAdmitVehicle({
+      facility: { ...facility, totalCapacity: 1 }, businessUnit: restaurantUnit,
+      businessUnits: [restaurantUnit], events: [], activeSessions: [activeAccessible],
+      spaceCategories: categories, spaceCategoryCode: "ACC",
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.allowStandardFallback).toBeUndefined();
+  });
 });

@@ -10,7 +10,7 @@ WHERE EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1')
   AND NOT EXISTS (SELECT 1 FROM facilities);
 
 INSERT OR IGNORE INTO space_categories (id, facility_id, name, code, allocated_slots)
-SELECT 'cat-std', 'fac-default-01', 'General / Estándar', 'STD', 80
+SELECT 'cat-std', 'fac-default-01', 'General / Estándar', 'STD', 90
 WHERE EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1');
 INSERT OR IGNORE INTO space_categories (id, facility_id, name, code, allocated_slots)
 SELECT 'cat-acc', 'fac-default-01', 'Accesible', 'ACC', 10
@@ -18,6 +18,9 @@ WHERE EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1');
 INSERT OR IGNORE INTO space_categories (id, facility_id, name, code, allocated_slots)
 SELECT 'cat-vip', 'fac-default-01', 'Preferencial / VIP', 'VIP', 10
 WHERE EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1');
+UPDATE space_categories SET allocated_slots = 0
+WHERE facility_id = 'fac-default-01' AND code = 'VIP'
+  AND EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1');
 
 INSERT OR IGNORE INTO business_units (id, facility_id, name, code, priority_level, quota_type, default_quota, is_active, version)
 SELECT 'bu-hotel-01', 'fac-default-01', 'Hotel', 'HOTEL', 1, 'guaranteed', 40, 1, 1
@@ -32,12 +35,12 @@ INSERT OR IGNORE INTO business_units (id, facility_id, name, code, priority_leve
 SELECT 'bu-gym-01', 'fac-default-01', 'Gimnasio', 'GYM', 3, 'dynamic', 0, 1, 1
 WHERE EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1');
 
-INSERT OR IGNORE INTO parking_areas (id, facility_id, name, code, description, allocated_capacity, business_unit_id, is_active, version, created_at, updated_at)
-SELECT 'area-default-01', 'fac-default-01', 'Subsuelo Techado (Nivel -1)', 'SUB-1', 'Estacionamiento techado principal', 50, NULL, 1, 1,
+INSERT OR IGNORE INTO parking_areas (id, facility_id, name, code, description, allocated_capacity, standard_capacity, accessible_capacity, business_unit_id, is_active, version, created_at, updated_at)
+SELECT 'area-default-01', 'fac-default-01', 'Subsuelo Techado (Nivel -1)', 'SUB-1', 'Estacionamiento techado principal', 50, 50, 0, NULL, 1, 1,
   '2026-10-15T00:00:00.000Z', '2026-10-15T00:00:00.000Z'
 WHERE EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1');
-INSERT OR IGNORE INTO parking_areas (id, facility_id, name, code, description, allocated_capacity, business_unit_id, is_active, version, created_at, updated_at)
-SELECT 'area-default-02', 'fac-default-01', 'Sector Preferencial Hotel', 'HOTEL-P1', 'Acceso directo a lobby hotel', 30, 'bu-hotel-01', 1, 1,
+INSERT OR IGNORE INTO parking_areas (id, facility_id, name, code, description, allocated_capacity, standard_capacity, accessible_capacity, business_unit_id, is_active, version, created_at, updated_at)
+SELECT 'area-default-02', 'fac-default-01', 'Sector Preferencial Hotel', 'HOTEL-P1', 'Acceso directo a lobby hotel', 30, 30, 0, 'bu-hotel-01', 1, 1,
   '2026-10-15T00:00:00.000Z', '2026-10-15T00:00:00.000Z'
 WHERE EXISTS (SELECT 1 FROM __local_catalog_seed WHERE id = 'base-v1');
 

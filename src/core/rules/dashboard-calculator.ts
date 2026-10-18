@@ -5,6 +5,7 @@ import type {
   ParkingArea,
   DashboardMetrics,
   AlertLevel,
+  SpaceCategory,
 } from "../types/schema";
 import {
   calculateFacilityBuffer,
@@ -16,6 +17,7 @@ export interface DashboardInput {
   businessUnits: BusinessUnit[];
   activeSessions: ParkingSession[];
   areas?: ParkingArea[];
+  spaceCategories?: SpaceCategory[];
   timestamp?: string;
 }
 
@@ -25,6 +27,14 @@ export function computeDashboardMetrics(input: DashboardInput): DashboardMetrics
   const totalOccupied = activeSessions.length;
   const totalCapacity = facility.totalCapacity;
   const totalAvailable = Math.max(0, totalCapacity - totalOccupied);
+  const categories = input.spaceCategories ?? [];
+  const accessibleCategoryIds = new Set(categories.filter((category) => category.code === "ACC").map((category) => category.id));
+  const accessibleCapacity = categories.find((category) => category.code === "ACC")?.allocatedSlots ?? 0;
+  const standardCapacity = categories.find((category) => category.code === "STD")?.allocatedSlots ?? (totalCapacity - accessibleCapacity);
+  const accessibleOccupied = activeSessions.filter((session) => accessibleCategoryIds.has(session.spaceCategoryId)).length;
+  const standardOccupied = totalOccupied - accessibleOccupied;
+  const standardAvailable = Math.max(0, standardCapacity - standardOccupied);
+  const accessibleAvailable = Math.max(0, accessibleCapacity - accessibleOccupied);
 
   const occupancyPercentage =
     totalCapacity > 0 ? Math.min(100, Math.round((totalOccupied / totalCapacity) * 100)) : 0;
@@ -54,13 +64,19 @@ export function computeDashboardMetrics(input: DashboardInput): DashboardMetrics
 
   const areasList = input.areas || [];
   const floatingBuffer = calculateFacilityBuffer(totalCapacity, areasList);
-  const areasMetrics = areasList.map((a) => calculateAreaAvailability(a, activeSessions));
+  const areasMetrics = areasList.map((a) => calculateAreaAvailability(a, activeSessions, categories));
 
   return {
     facilityId: facility.id,
     totalCapacity,
     totalOccupied,
     totalAvailable,
+    standardCapacity,
+    standardOccupied,
+    standardAvailable,
+    accessibleCapacity,
+    accessibleOccupied,
+    accessibleAvailable,
     occupancyPercentage,
     alertLevel,
     units,

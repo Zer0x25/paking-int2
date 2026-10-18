@@ -36,6 +36,8 @@ export interface ParkingAreaRow {
   code: string;
   description: string;
   allocated_capacity: number;
+  standard_capacity: number;
+  accessible_capacity: number;
   business_unit_id: string | null;
   is_active: number;
   version: number;
@@ -112,6 +114,8 @@ export function parkingAreaFromRow(row: ParkingAreaRow): ParkingArea {
     code: row.code,
     description: row.description,
     allocatedCapacity: Number(row.allocated_capacity),
+    standardCapacity: Number(row.standard_capacity),
+    accessibleCapacity: Number(row.accessible_capacity),
     businessUnitId: row.business_unit_id,
     isActive: Boolean(row.is_active),
     version: Number(row.version),

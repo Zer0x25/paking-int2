@@ -17,6 +17,7 @@ dashboardRoutes.get("/:id/dashboard", async (c) => {
       businessUnits: snapshot.businessUnits.filter((unit) => unit.isActive),
       activeSessions: snapshot.activeSessions,
       areas: snapshot.areas.filter((area) => area.isActive),
+      spaceCategories: snapshot.categories,
     });
     return c.json(metrics);
   } catch (error) {

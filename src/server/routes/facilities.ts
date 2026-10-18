@@ -25,6 +25,9 @@ import {
   updateParkingArea,
   deactivateParkingArea,
   calculateAreaAvailability,
+  calculateFacilityTypeBuffer,
+  splitFacilityCapacity,
+  validateFacilityTypeCapacity,
 } from "@core/rules/areaAllocationRules";
 import {
   cancelEventBooking,
@@ -92,6 +95,21 @@ function isContractualUnit(units: BusinessUnit[], businessUnitId: string): boole
   return units.some((unit) => unit.id === businessUnitId && unit.isActive && unit.quotaType === "contractual");
 }
 
+function accessibleCapacityOf(categories: { code: string; allocatedSlots: number }[]): number {
+  return categories.find((category) => category.code === "ACC")?.allocatedSlots ?? 0;
+}
+
+function occupancyBySpaceType(
+  sessions: { status: string; spaceCategoryId: string; parkingAreaId?: string | null }[],
+  categories: { id: string; code: string }[],
+  areaId?: string,
+): { standard: number; accessible: number; total: number } {
+  const accessibleIds = new Set(categories.filter((category) => category.code === "ACC").map((category) => category.id));
+  const scoped = sessions.filter((session) => session.status === "active" && (areaId === undefined || session.parkingAreaId === areaId));
+  const accessible = scoped.filter((session) => accessibleIds.has(session.spaceCategoryId)).length;
+  return { standard: scoped.length - accessible, accessible, total: scoped.length };
+}
+
 // GET /api/facilities
 facilityRoutes.get("/", async (c) => {
   try {
@@ -157,6 +175,9 @@ facilityRoutes.put("/:id", async (c) => {
   try {
     const snapshot = await loadFacilitySnapshot(c.env, facilityId);
     if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    const currentAccessibleCapacity = accessibleCapacityOf(snapshot.categories);
+    const totalCapacity = parsed.data.totalCapacity ?? snapshot.facility.totalCapacity;
+    const accessibleCapacity = parsed.data.accessibleCapacity ?? currentAccessibleCapacity;
     if (parsed.data.totalCapacity !== undefined) {
       try {
         validateFacilityCapacity(parsed.data.totalCapacity, snapshot.areas, snapshot.activeSessions.length);
@@ -165,11 +186,24 @@ facilityRoutes.put("/:id", async (c) => {
         throw error;
       }
     }
+    try {
+      validateFacilityTypeCapacity({
+        totalCapacity,
+        accessibleCapacity,
+        areas: snapshot.areas,
+        activeSessions: snapshot.activeSessions,
+        categories: snapshot.categories,
+      });
+    } catch (error) {
+      if (error instanceof BusinessRuleError) return c.json({ error: error.message }, 409);
+      throw error;
+    }
     const facility = await updateFacilityRecord(c.env, {
       facilityId,
       expectedVersion: snapshot.facilityVersion,
       updates: parsed.data,
       current: snapshot.facility,
+      currentAccessibleCapacity,
       actor: actor(c),
       activeSessions: snapshot.activeSessions,
       areas: snapshot.areas,
@@ -274,17 +308,26 @@ facilityRoutes.get("/:id/areas", async (c) => {
     if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
     const activeAreas = snapshot.areas.filter((area) => area.isActive);
     const allocatedCapacitySum = activeAreas.reduce((sum, area) => sum + area.allocatedCapacity, 0);
+    const accessibleCapacity = accessibleCapacityOf(snapshot.categories);
+    const typeCapacity = splitFacilityCapacity(snapshot.facility.totalCapacity, accessibleCapacity);
+    const typeBuffer = calculateFacilityTypeBuffer(typeCapacity, activeAreas);
     const areas = snapshot.areas.map((area) => {
-      const metrics = calculateAreaAvailability(area, snapshot.activeSessions);
+      const metrics = calculateAreaAvailability(area, snapshot.activeSessions, snapshot.categories);
       return {
         ...area,
         activeOccupancy: metrics.occupied,
+        standardOccupied: metrics.standardOccupied,
+        standardAvailable: metrics.standardAvailable,
+        accessibleOccupied: metrics.accessibleOccupied,
+        accessibleAvailable: metrics.accessibleAvailable,
         availableSlots: area.isActive ? metrics.available : 0,
         occupancyPercentage: area.isActive ? metrics.occupancyPercentage : 0,
         isSaturated: area.isActive && metrics.isSaturated,
       };
     });
     return c.json({ facilityId: snapshot.facility.id, totalCapacity: snapshot.facility.totalCapacity, allocatedCapacitySum,
+      standardCapacity: typeCapacity.standardCapacity, accessibleCapacity: typeCapacity.accessibleCapacity,
+      standardFloatingBuffer: typeBuffer.standardCapacity, accessibleFloatingBuffer: typeBuffer.accessibleCapacity,
       floatingBuffer: calculateFacilityBuffer(snapshot.facility.totalCapacity, activeAreas), areas });
   } catch (error) {
     const failure = readFailure(error, "No se pudieron cargar las áreas", c);
@@ -303,7 +346,7 @@ facilityRoutes.post("/:id/areas", async (c) => {
     if (parsed.data.businessUnitId && !snapshot.businessUnits.some((unit) => unit.id === parsed.data.businessUnitId && unit.isActive)) {
       return c.json({ error: "La unidad asignada no está activa en esta instalación" }, 409);
     }
-    const area = createParkingArea(parsed.data, snapshot.areas, snapshot.facility.totalCapacity);
+    const area = createParkingArea(parsed.data, snapshot.areas, splitFacilityCapacity(snapshot.facility.totalCapacity, accessibleCapacityOf(snapshot.categories)));
     await createAreaRecord(c.env, { area, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ area }, 201);
   } catch (error) {
@@ -323,9 +366,13 @@ facilityRoutes.patch("/:id/areas/:areaId/capacity", async (c) => {
     if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
     const targetArea = snapshot.areas.find((area) => area.id === areaId);
     if (!targetArea) return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
-    const activeOccupancy = snapshot.activeSessions.filter((session) => session.parkingAreaId === areaId).length;
-    const area = reallocateAreaCapacity({ areaId, newCapacity: parsed.data.allocatedCapacity, areas: snapshot.areas,
-      facilityTotalCapacity: snapshot.facility.totalCapacity, activeOccupancy, expectedVersion: parsed.data.version });
+    const occupancy = occupancyBySpaceType(snapshot.activeSessions, snapshot.categories, areaId);
+    const area = reallocateAreaCapacity({ areaId, newCapacity: parsed.data.allocatedCapacity,
+      standardCapacity: parsed.data.standardCapacity, accessibleCapacity: parsed.data.accessibleCapacity,
+      areas: snapshot.areas, facilityTotalCapacity: snapshot.facility.totalCapacity,
+      facilityAccessibleCapacity: accessibleCapacityOf(snapshot.categories), activeOccupancy: occupancy.total,
+      activeStandardOccupancy: occupancy.standard, activeAccessibleOccupancy: occupancy.accessible,
+      expectedVersion: parsed.data.version });
     await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: targetArea });
     return c.json({ area }, 200);
   } catch (error) {
@@ -345,9 +392,11 @@ facilityRoutes.put("/:id/areas/:areaId", async (c) => {
     if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
     const current = snapshot.areas.find((area) => area.id === areaId);
     if (!current) return c.json({ error: `Área con ID "${areaId}" no encontrada` }, 404);
-    const occupancy = snapshot.activeSessions.filter((session) => session.parkingAreaId === areaId).length;
+    const occupancy = occupancyBySpaceType(snapshot.activeSessions, snapshot.categories, areaId);
     const area = updateParkingArea({ areaId, ...parsed.data, areas: snapshot.areas, facilityTotalCapacity: snapshot.facility.totalCapacity,
-      activeOccupancy: occupancy, expectedVersion: parsed.data.version });
+      facilityAccessibleCapacity: accessibleCapacityOf(snapshot.categories), activeOccupancy: occupancy.total,
+      activeStandardOccupancy: occupancy.standard, activeAccessibleOccupancy: occupancy.accessible,
+      expectedVersion: parsed.data.version });
     await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: current });
     return c.json({ area }, 200);
   } catch (error) {

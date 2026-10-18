@@ -5,9 +5,11 @@ import type {
   ParkingSession,
   ParkingArea,
   ParkingAreaMetrics,
+  SpaceCategory,
 } from "../types/schema";
 import {
   calculateFacilityBuffer,
+  calculateFacilityTypeBuffer,
   calculateAreaAvailability,
   canAdmitVehicleToArea,
 } from "./areaAllocationRules";
@@ -18,6 +20,7 @@ export interface AllocationContext {
   events: EventBooking[];
   activeSessions: ParkingSession[];
   areas?: ParkingArea[];
+  spaceCategories?: SpaceCategory[];
   currentTime?: string;
 }
 
@@ -30,6 +33,14 @@ export interface AvailabilityResult {
   occupancyPercentage: number;
   floatingBuffer: number;
   areas: ParkingAreaMetrics[];
+  standardCapacity: number;
+  standardOccupied: number;
+  standardAvailable: number;
+  accessibleCapacity: number;
+  accessibleOccupied: number;
+  accessibleAvailable: number;
+  standardFloatingBuffer: number;
+  accessibleFloatingBuffer: number;
   unitAvailability: Record<
     string,
     {
@@ -113,18 +124,35 @@ export function calculateAvailability(ctx: AllocationContext): AvailabilityResul
   }
 
   const totalAvailable = Math.max(0, totalCapacity - totalOccupied);
+  const categories = ctx.spaceCategories ?? [];
+  const accessibleCategoryIds = new Set(categories.filter((category) => category.code === "ACC").map((category) => category.id));
+  const accessibleCapacity = categories.find((category) => category.code === "ACC")?.allocatedSlots ?? 0;
+  const standardCapacity = categories.find((category) => category.code === "STD")?.allocatedSlots ?? (totalCapacity - accessibleCapacity);
+  const accessibleOccupied = activeSessions.filter((session) => accessibleCategoryIds.has(session.spaceCategoryId)).length;
+  const standardOccupied = totalOccupied - accessibleOccupied;
+  const standardAvailable = Math.max(0, standardCapacity - standardOccupied);
+  const accessibleAvailable = Math.max(0, accessibleCapacity - accessibleOccupied);
   const occupancyPercentage =
     totalCapacity > 0 ? Math.min(100, Math.round((totalOccupied / totalCapacity) * 100)) : 0;
 
   const areasList = ctx.areas || [];
   const floatingBuffer = calculateFacilityBuffer(totalCapacity, areasList);
-  const areaMetrics = areasList.map((area) => calculateAreaAvailability(area, activeSessions));
+  const areaMetrics = areasList.map((area) => calculateAreaAvailability(area, activeSessions, categories));
+  const typeBuffer = calculateFacilityTypeBuffer({ standardCapacity, accessibleCapacity }, areasList);
 
   return {
     facilityId: ctx.facility.id,
     totalCapacity,
     totalOccupied,
     totalAvailable,
+    standardCapacity,
+    standardOccupied,
+    standardAvailable,
+    accessibleCapacity,
+    accessibleOccupied,
+    accessibleAvailable,
+    standardFloatingBuffer: typeBuffer.standardCapacity,
+    accessibleFloatingBuffer: typeBuffer.accessibleCapacity,
     dynamicPoolRemaining,
     occupancyPercentage,
     floatingBuffer,
@@ -134,15 +162,82 @@ export function calculateAvailability(ctx: AllocationContext): AvailabilityResul
 }
 
 export function canAdmitVehicle(
-  ctx: AllocationContext & { businessUnit: BusinessUnit; parkingAreaId?: string }
-): { allowed: boolean; reason?: string } {
+  ctx: AllocationContext & { businessUnit: BusinessUnit; parkingAreaId?: string; spaceCategoryCode?: "STD" | "ACC" }
+): { allowed: boolean; reason?: string; suggestedParkingAreaId?: string; allowStandardFallback?: boolean } {
   // If a parking area is specified, validate area rules first
   if (ctx.parkingAreaId && ctx.areas) {
     const area = ctx.areas.find((a) => a.id === ctx.parkingAreaId);
     if (area) {
-      const areaCheck = canAdmitVehicleToArea(area, ctx.activeSessions, ctx.businessUnit.id);
+      const areaCheck = canAdmitVehicleToArea(area, ctx.activeSessions, ctx.businessUnit.id, ctx.spaceCategoryCode, ctx.spaceCategories);
       if (!areaCheck.allowed) {
-        return areaCheck;
+        const isAccessibleAreaCapacity = ctx.spaceCategoryCode === "ACC"
+          && (areaCheck.reason?.includes("No hay plazas Accesibles") || areaCheck.reason?.includes("Capacidad máxima alcanzada"));
+        if (isAccessibleAreaCapacity) {
+          const accessibleCapacity = (ctx.spaceCategories ?? []).find((category) => category.code === "ACC")?.allocatedSlots ?? 0;
+          const accessibleIds = new Set((ctx.spaceCategories ?? []).filter((category) => category.code === "ACC").map((category) => category.id));
+          const accessibleOccupied = ctx.activeSessions.filter((session) => session.status === "active" && accessibleIds.has(session.spaceCategoryId)).length;
+          if (accessibleOccupied < accessibleCapacity) {
+            const alternative = ctx.areas.find((candidate) => candidate.id !== area.id
+              && canAdmitVehicleToArea(candidate, ctx.activeSessions, ctx.businessUnit.id, "ACC", ctx.spaceCategories).allowed);
+            if (alternative) {
+              return {
+                allowed: false,
+                reason: `El área "${area.name}" no tiene plazas Accesibles disponibles. Puede usar "${alternative.name}".`,
+                suggestedParkingAreaId: alternative.id,
+              };
+            }
+            return areaCheck;
+          }
+          // Let the facility-wide check below decide whether an explicit Standard fallback is safe.
+        } else {
+          return areaCheck;
+        }
+      }
+    }
+  }
+
+  if (ctx.spaceCategoryCode) {
+    const categories = ctx.spaceCategories ?? [];
+    const accessibleCategoryIds = new Set(categories.filter((category) => category.code === "ACC").map((category) => category.id));
+    const accessibleCapacity = categories.find((category) => category.code === "ACC")?.allocatedSlots ?? 0;
+    const standardCapacity = categories.find((category) => category.code === "STD")?.allocatedSlots ?? (ctx.facility.totalCapacity - accessibleCapacity);
+    const isAccessible = ctx.spaceCategoryCode === "ACC";
+    const capacity = isAccessible ? accessibleCapacity : standardCapacity;
+    const occupied = ctx.activeSessions.filter((session) => session.status === "active"
+      && (accessibleCategoryIds.has(session.spaceCategoryId) === isAccessible)).length;
+    if (occupied >= capacity) {
+      const reason = isAccessible
+        ? "La capacidad Accesible está agotada en el recinto; puede elegir una plaza Estándar disponible."
+        : "La capacidad Estándar está agotada en el recinto.";
+      if (isAccessible) {
+        const standardFallback = canAdmitVehicle({ ...ctx, spaceCategoryCode: "STD" });
+        return {
+          allowed: false,
+          reason,
+          ...(standardFallback.allowed ? { allowStandardFallback: true } : {}),
+        };
+      }
+      return {
+        allowed: false,
+        reason,
+      };
+    }
+    if (!ctx.parkingAreaId) {
+      const buffer = calculateFacilityTypeBuffer({ standardCapacity, accessibleCapacity }, ctx.areas ?? []);
+      const floatingAvailable = isAccessible ? buffer.accessibleCapacity : buffer.standardCapacity;
+      if (floatingAvailable <= 0) {
+        if (isAccessible) {
+          const alternative = (ctx.areas ?? []).find((area) => canAdmitVehicleToArea(area, ctx.activeSessions, ctx.businessUnit.id, "ACC", categories).allowed);
+          if (alternative) {
+            return { allowed: false, reason: `La reserva flotante no tiene plazas Accesibles; puede usar "${alternative.name}".`, suggestedParkingAreaId: alternative.id };
+          }
+        }
+        return {
+          allowed: false,
+          reason: isAccessible
+            ? "No quedan plazas Accesibles disponibles en la reserva flotante."
+            : "No quedan plazas Estándar disponibles en la reserva flotante.",
+        };
       }
     }
   }

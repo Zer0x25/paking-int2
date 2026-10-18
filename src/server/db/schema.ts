@@ -94,6 +94,8 @@ export const parkingAreas = sqliteTable("parking_areas", {
   code: text("code").notNull(),
   description: text("description").notNull().default(""),
   allocatedCapacity: integer("allocated_capacity").notNull().default(0),
+  standardCapacity: integer("standard_capacity").notNull().default(0),
+  accessibleCapacity: integer("accessible_capacity").notNull().default(0),
   businessUnitId: text("business_unit_id"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   version: integer("version").notNull().default(1),
@@ -109,6 +111,8 @@ export const parkingAreas = sqliteTable("parking_areas", {
   check("parking_areas_version_positive", sql`${table.version} > 0`),
   check("parking_areas_active_boolean", sql`${table.isActive} IN (0, 1)`),
   check("parking_areas_capacity_nonnegative", sql`${table.allocatedCapacity} >= 0`),
+  check("parking_areas_standard_capacity_nonnegative", sql`${table.standardCapacity} >= 0`),
+  check("parking_areas_accessible_capacity_nonnegative", sql`${table.accessibleCapacity} >= 0`),
 ]);
 
 export const parkingSessions = sqliteTable("parking_sessions", {

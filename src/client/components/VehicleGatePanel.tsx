@@ -47,7 +47,9 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
   const [step, setStep] = useState<GateStep>("plate");
   const [plate, setPlate] = useState("");
   const [selectedUnit, setSelectedUnit] = useState(businessUnits[0]?.id || "");
-  const [selectedCategory, setSelectedCategory] = useState(spaceCategories[0]?.id || "");
+  const entrySpaceCategories = spaceCategories.filter((category) => category.code === "STD" || category.code === "ACC");
+  const standardCategory = entrySpaceCategories.find((category) => category.code === "STD");
+  const [selectedCategory, setSelectedCategory] = useState(standardCategory?.id || entrySpaceCategories[0]?.id || "");
   const [selectedArea, setSelectedArea] = useState("");
   const [sessions, setSessions] = useState<ParkingSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
@@ -58,6 +60,9 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [lastTicket, setLastTicket] = useState<{ ticketNumber: string; plate: string; offline: boolean } | null>(null);
+  const [suggestedAreaId, setSuggestedAreaId] = useState<string | null>(null);
+  const [standardFallbackAvailable, setStandardFallbackAvailable] = useState(false);
+  const [standardFallbackConfirmed, setStandardFallbackConfirmed] = useState(false);
 
   useEffect(() => {
     if (!businessUnits.some((unit) => unit.id === selectedUnit)) {
@@ -66,10 +71,45 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
   }, [businessUnits, selectedUnit]);
 
   useEffect(() => {
-    if (!spaceCategories.some((category) => category.id === selectedCategory)) {
-      setSelectedCategory(spaceCategories[0]?.id || "");
+    if (!entrySpaceCategories.some((category) => category.id === selectedCategory)) {
+      setSelectedCategory(standardCategory?.id || entrySpaceCategories[0]?.id || "");
     }
-  }, [spaceCategories, selectedCategory]);
+  }, [spaceCategories, selectedCategory, standardCategory?.id]);
+
+  const getCategoryCode = (spaceCategoryId: string): "STD" | "ACC" =>
+    spaceCategories.find((category) => category.id === spaceCategoryId)?.code === "ACC" ? "ACC" : "STD";
+
+  const getAreaAvailability = (area: ParkingArea, code: "STD" | "ACC") => {
+    const categoryIds = new Set(entrySpaceCategories.filter((category) => category.code === code).map((category) => category.id));
+    const occupied = sessions.filter((session) => session.status === "active" && session.parkingAreaId === area.id && (code === "ACC"
+      ? categoryIds.has(session.spaceCategoryId)
+      : !spaceCategories.some((category) => category.code === "ACC" && category.id === session.spaceCategoryId))).length;
+    const capacity = code === "ACC" ? area.accessibleCapacity ?? 0 : area.standardCapacity ?? area.allocatedCapacity;
+    return Math.max(0, capacity - occupied);
+  };
+
+  const getFloatingAvailability = (code: "STD" | "ACC") => {
+    const category = entrySpaceCategories.find((item) => item.code === code);
+    const assignedCapacity = areas.filter((area) => area.isActive).reduce((sum, area) => sum + (code === "ACC"
+      ? area.accessibleCapacity ?? 0
+      : area.standardCapacity ?? area.allocatedCapacity), 0);
+    const capacity = Math.max(0, (category?.allocatedSlots ?? 0) - assignedCapacity);
+    const occupied = sessions.filter((session) => session.status === "active" && !session.parkingAreaId && (code === "ACC"
+      ? getCategoryCode(session.spaceCategoryId) === "ACC"
+      : getCategoryCode(session.spaceCategoryId) !== "ACC")).length;
+    return Math.max(0, capacity - occupied);
+  };
+
+  const confirmStandardFallback = () => {
+    if (!standardCategory) return;
+    setSelectedCategory(standardCategory.id);
+    setStandardFallbackAvailable(false);
+    setStandardFallbackConfirmed(true);
+    setSuggestedAreaId(null);
+    setMessage({ text: "Vas a registrar este vehículo en una plaza Estándar. Confirma para continuar.", type: "error" });
+  };
+  const currentArea = areas.find((area) => area.id === selectedArea);
+  const selectedCategoryCode = getCategoryCode(selectedCategory);
 
   const refreshSessions = useCallback(async () => {
     if (!navigator.onLine) {
@@ -182,9 +222,14 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
         const data = await response.json();
         if (!response.ok) {
           setMessage({ text: data.error || "No se pudo registrar la entrada", type: "error" });
+          setSuggestedAreaId(typeof data.suggestedParkingAreaId === "string" ? data.suggestedParkingAreaId : null);
+          setStandardFallbackAvailable(data.allowStandardFallback === true && getCategoryCode(selectedCategory) === "ACC");
           return;
         }
         await saveLocalSession(data.session);
+        setSuggestedAreaId(null);
+        setStandardFallbackAvailable(false);
+        setStandardFallbackConfirmed(false);
         setLastTicket({ ticketNumber: data.ticket?.ticketNumber || `TK-${Date.now().toString().slice(-6)}`, plate: cleanPlate, offline: false });
       } catch {
         if (!(await validateLocalEntry(cleanPlate))) return;
@@ -534,28 +579,62 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="gate-space-category">Tipo de espacio</label>
-              <select id="gate-space-category" className="form-select" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} required>
-                {spaceCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              <select id="gate-space-category" className="form-select" value={selectedCategory} onChange={(event) => {
+                setSelectedCategory(event.target.value);
+                setSuggestedAreaId(null);
+                setStandardFallbackAvailable(false);
+                setStandardFallbackConfirmed(false);
+                setMessage(null);
+              }} required>
+                {entrySpaceCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
               </select>
             </div>
             <div className="form-group gate-area-field">
               <label className="form-label" htmlFor="gate-parking-area">Área / sector</label>
-              <select id="gate-parking-area" className="form-select" value={selectedArea} onChange={(event) => setSelectedArea(event.target.value)}>
+              <select id="gate-parking-area" className="form-select" value={selectedArea} onChange={(event) => {
+                setSelectedArea(event.target.value);
+                setSuggestedAreaId(null);
+                setStandardFallbackAvailable(false);
+                setStandardFallbackConfirmed(false);
+                setMessage(null);
+              }}>
                 <option value="">Asignación automática / flotante</option>
-                {areas.map((area) => <option key={area.id} value={area.id}>[{area.code}] {area.name} · {area.allocatedCapacity} plazas</option>)}
+                {areas.filter((area) => area.isActive).map((area) => <option key={area.id} value={area.id}>
+                  [{area.code}] {area.name} · {getAreaAvailability(area, "STD")} Estándar / {getAreaAvailability(area, "ACC")} Accesibles libres
+                </option>)}
               </select>
             </div>
           </div>
 
+          <div className="gate-capacity-hint" role="status">
+            {currentArea
+              ? `Disponibles en el área: ${getAreaAvailability(currentArea, selectedCategoryCode)} ${selectedCategoryCode === "ACC" ? "Accesibles" : "Estándar"}.`
+              : `Reserva flotante: ${getFloatingAvailability(selectedCategoryCode)} ${selectedCategoryCode === "ACC" ? "Accesibles" : "Estándar"} disponibles.`}
+          </div>
+
+          {suggestedAreaId && <div className="gate-capacity-prompt" role="status">
+            <span>{message?.text}</span>
+            <button type="button" className="btn btn-secondary" onClick={() => {
+              setSelectedArea(suggestedAreaId);
+              setSuggestedAreaId(null);
+              setMessage(null);
+            }}>Usar área {areas.find((area) => area.id === suggestedAreaId)?.name || "sugerida"}</button>
+          </div>}
+
+          {standardFallbackAvailable && <div className="gate-capacity-prompt" role="alert">
+            <span>{message?.text} Las plazas Accesibles seguirán protegidas.</span>
+            <button type="button" className="btn btn-secondary" onClick={confirmStandardFallback}>Usar una plaza Estándar</button>
+          </div>}
+
           <div className="gate-step-actions">
             <button type="button" className="btn btn-secondary" onClick={returnToMovement} disabled={loading}>Volver</button>
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? "Procesando…" : "Confirmar entrada"}
+              {loading ? "Procesando…" : standardFallbackConfirmed ? "Confirmar entrada Estándar" : "Confirmar entrada"}
             </button>
           </div>
         </form>}
 
-        {message && <div className={`gate-message ${message.type}`} role={message.type === "error" ? "alert" : "status"}>{message.text}</div>}
+        {message && !suggestedAreaId && !standardFallbackAvailable && <div className={`gate-message ${message.type}`} role={message.type === "error" ? "alert" : "status"}>{message.text}</div>}
         {lastTicket && <div className="gate-ticket" role="status">
           <span>{lastTicket.offline ? "INGRESO GUARDADO OFFLINE" : "INGRESO REGISTRADO"}</span>
           <strong>{formatLicensePlate(lastTicket.plate)}</strong>

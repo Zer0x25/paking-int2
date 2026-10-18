@@ -15,13 +15,19 @@ export const CreateFacilityInputSchema = z.object({
   name: z.string().min(2, "El nombre de la instalación debe tener al menos 2 caracteres"),
   address: z.string().optional().default(""),
   totalCapacity: z.number().int().positive("La capacidad total debe ser mayor a 0"),
-}).strict();
-export type CreateFacilityInput = z.infer<typeof CreateFacilityInputSchema>;
+  accessibleCapacity: z.number().int().nonnegative().optional().default(0),
+}).strict().superRefine((value, context) => {
+  if (value.accessibleCapacity > value.totalCapacity) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["accessibleCapacity"], message: "Las plazas Accesibles no pueden superar la capacidad total" });
+  }
+});
+export type CreateFacilityInput = z.input<typeof CreateFacilityInputSchema>;
 
 export const UpdateFacilityInputSchema = z.object({
   name: z.string().min(2).optional(),
   address: z.string().optional(),
   totalCapacity: z.number().int().positive().optional(),
+  accessibleCapacity: z.number().int().nonnegative().optional(),
 });
 export type UpdateFacilityInput = z.infer<typeof UpdateFacilityInputSchema>;
 
@@ -31,46 +37,90 @@ export const DeactivateFacilityInputSchema = z.object({
 export type DeactivateFacilityInput = z.infer<typeof DeactivateFacilityInputSchema>;
 
 // --- Parking Area ---
-export const ParkingAreaSchema = z.object({
+const ParkingAreaBaseSchema = z.object({
   id: z.string().min(1),
   facilityId: z.string().min(1),
   name: z.string().min(2, "El nombre del área debe tener al menos 2 caracteres"),
   code: z.string().min(1).max(10).toUpperCase(),
   description: z.string().optional().default(""),
   allocatedCapacity: z.number().int().nonnegative("La capacidad asignada no puede ser negativa"),
+  standardCapacity: z.number().int().nonnegative().optional(),
+  accessibleCapacity: z.number().int().nonnegative().optional(),
   businessUnitId: z.string().nullable().default(null),
   isActive: z.boolean().default(true),
   version: z.number().int().default(1),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
-export type ParkingArea = z.infer<typeof ParkingAreaSchema>;
+
+export const ParkingAreaSchema = ParkingAreaBaseSchema.transform((area) => {
+  const accessibleCapacity = area.accessibleCapacity ?? 0;
+  return {
+    ...area,
+    standardCapacity: area.standardCapacity ?? Math.max(0, area.allocatedCapacity - accessibleCapacity),
+    accessibleCapacity,
+  };
+}).superRefine((area, context) => {
+  if (area.standardCapacity + area.accessibleCapacity !== area.allocatedCapacity) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["allocatedCapacity"], message: "La capacidad total del área debe coincidir con Estándar + Accesible" });
+  }
+});
+// Capacity fields remain optional at the type boundary for legacy cached rows; the Zod parser normalizes them.
+export type ParkingArea = Omit<z.infer<typeof ParkingAreaSchema>, "standardCapacity" | "accessibleCapacity">
+  & { standardCapacity?: number; accessibleCapacity?: number };
+
+const AreaCapacityInputShape = {
+  allocatedCapacity: z.number().int().nonnegative().optional(),
+  standardCapacity: z.number().int().nonnegative().optional(),
+  accessibleCapacity: z.number().int().nonnegative().optional(),
+};
+
+function validateAreaCapacityInput(
+  value: { allocatedCapacity?: number; standardCapacity?: number; accessibleCapacity?: number },
+  context: z.RefinementCtx,
+): void {
+  if (value.allocatedCapacity === undefined && value.standardCapacity === undefined && value.accessibleCapacity === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["standardCapacity"], message: "Indica la capacidad Estándar y/o Accesible" });
+  }
+  if (value.allocatedCapacity !== undefined && (value.standardCapacity !== undefined || value.accessibleCapacity !== undefined)) {
+    const splitTotal = (value.standardCapacity ?? 0) + (value.accessibleCapacity ?? 0);
+    if (splitTotal !== value.allocatedCapacity) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["allocatedCapacity"], message: "La capacidad total debe coincidir con Estándar + Accesible" });
+    }
+  }
+}
+
+function normalizeAreaCapacity<T extends { allocatedCapacity?: number; standardCapacity?: number; accessibleCapacity?: number }>(value: T) {
+  const standardCapacity = value.standardCapacity ?? value.allocatedCapacity ?? 0;
+  const accessibleCapacity = value.accessibleCapacity ?? 0;
+  return { standardCapacity, accessibleCapacity, allocatedCapacity: standardCapacity + accessibleCapacity };
+}
 
 export const CreateParkingAreaInputSchema = z.object({
   facilityId: z.string().min(1),
   name: z.string().min(2, "El nombre del área debe tener al menos 2 caracteres"),
   code: z.string().min(1).max(10).toUpperCase(),
   description: z.string().optional().default(""),
-  allocatedCapacity: z.number().int().nonnegative("La capacidad debe ser mayor o igual a 0"),
   businessUnitId: z.string().nullable().optional().default(null),
-});
+  ...AreaCapacityInputShape,
+}).strict().superRefine(validateAreaCapacityInput).transform((value) => ({ ...value, ...normalizeAreaCapacity(value) }));
 export type CreateParkingAreaInput = z.input<typeof CreateParkingAreaInputSchema>;
 
 export const UpdateParkingAreaCapacityInputSchema = z.object({
-  allocatedCapacity: z.number().int().nonnegative(),
+  ...AreaCapacityInputShape,
   version: z.number().int().positive(),
-});
-export type UpdateParkingAreaCapacityInput = z.infer<typeof UpdateParkingAreaCapacityInputSchema>;
+}).strict().superRefine(validateAreaCapacityInput).transform((value) => ({ ...value, ...normalizeAreaCapacity(value) }));
+export type UpdateParkingAreaCapacityInput = z.output<typeof UpdateParkingAreaCapacityInputSchema>;
 
 export const UpdateParkingAreaInputSchema = z.object({
   name: z.string().trim().min(2, "El nombre del área debe tener al menos 2 caracteres"),
   code: z.string().trim().min(1).max(10).transform((value) => value.toUpperCase()),
   description: z.string().trim().default(""),
-  allocatedCapacity: z.number().int().nonnegative(),
   businessUnitId: z.string().nullable().default(null),
   version: z.number().int().positive(),
-});
-export type UpdateParkingAreaInput = z.infer<typeof UpdateParkingAreaInputSchema>;
+  ...AreaCapacityInputShape,
+}).strict().superRefine(validateAreaCapacityInput).transform((value) => ({ ...value, ...normalizeAreaCapacity(value) }));
+export type UpdateParkingAreaInput = z.output<typeof UpdateParkingAreaInputSchema>;
 
 export const DeactivateParkingAreaInputSchema = z.object({
   isActive: z.literal(false),
@@ -85,10 +135,24 @@ export const ParkingAreaMetricsSchema = z.object({
   allocatedCapacity: z.number().int().nonnegative(),
   occupied: z.number().int().nonnegative(),
   available: z.number().int().nonnegative(),
+  standardCapacity: z.number().int().nonnegative().optional(),
+  standardOccupied: z.number().int().nonnegative().optional(),
+  standardAvailable: z.number().int().nonnegative().optional(),
+  accessibleCapacity: z.number().int().nonnegative().optional(),
+  accessibleOccupied: z.number().int().nonnegative().optional(),
+  accessibleAvailable: z.number().int().nonnegative().optional(),
   occupancyPercentage: z.number().min(0).max(100),
   isSaturated: z.boolean(),
   businessUnitId: z.string().nullable(),
-});
+}).transform((area) => ({
+  ...area,
+  standardCapacity: area.standardCapacity ?? area.allocatedCapacity,
+  standardOccupied: area.standardOccupied ?? area.occupied,
+  standardAvailable: area.standardAvailable ?? area.available,
+  accessibleCapacity: area.accessibleCapacity ?? 0,
+  accessibleOccupied: area.accessibleOccupied ?? 0,
+  accessibleAvailable: area.accessibleAvailable ?? 0,
+}));
 export type ParkingAreaMetrics = z.infer<typeof ParkingAreaMetricsSchema>;
 
 // --- Space Category ---
@@ -320,11 +384,25 @@ export const DashboardMetricsSchema = z.object({
   totalCapacity: z.number().int().nonnegative(),
   totalOccupied: z.number().int().nonnegative(),
   totalAvailable: z.number().int().nonnegative(),
+  standardCapacity: z.number().int().nonnegative().optional(),
+  standardOccupied: z.number().int().nonnegative().optional(),
+  standardAvailable: z.number().int().nonnegative().optional(),
+  accessibleCapacity: z.number().int().nonnegative().optional(),
+  accessibleOccupied: z.number().int().nonnegative().optional(),
+  accessibleAvailable: z.number().int().nonnegative().optional(),
   occupancyPercentage: z.number().min(0).max(100),
   alertLevel: AlertLevelEnum,
   units: z.array(BusinessUnitMetricsSchema),
   areas: z.array(ParkingAreaMetricsSchema).default([]),
   floatingBuffer: z.number().int().nonnegative().default(0),
   timestamp: z.string().datetime(),
-});
+}).transform((metrics) => ({
+  ...metrics,
+  standardCapacity: metrics.standardCapacity ?? metrics.totalCapacity,
+  standardOccupied: metrics.standardOccupied ?? metrics.totalOccupied,
+  standardAvailable: metrics.standardAvailable ?? metrics.totalAvailable,
+  accessibleCapacity: metrics.accessibleCapacity ?? 0,
+  accessibleOccupied: metrics.accessibleOccupied ?? 0,
+  accessibleAvailable: metrics.accessibleAvailable ?? 0,
+}));
 export type DashboardMetrics = z.infer<typeof DashboardMetricsSchema>;

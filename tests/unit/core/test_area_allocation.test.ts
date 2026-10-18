@@ -8,6 +8,8 @@ import {
   deactivateParkingArea,
   calculateAreaAvailability,
   canAdmitVehicleToArea,
+  calculateFacilityTypeBuffer,
+  splitFacilityCapacity,
 } from "@core/rules/areaAllocationRules";
 import type {
   Facility,
@@ -401,4 +403,72 @@ describe("TDD Feature 002: Construcción de Instalaciones, Áreas y Asignación 
         .toThrow(/concurrencia optimista/i);
     });
   });
+
+  describe("Capacidad física por tipo", () => {
+    it("crea áreas con capacidad Estándar y Accesible calculando el total", () => {
+      const area = createParkingArea(
+        { facilityId: facility.id, name: "Acceso", code: "ACC-1", standardCapacity: 20, accessibleCapacity: 1 },
+        [],
+        { standardCapacity: 33, accessibleCapacity: 2 },
+      );
+
+      expect(area).toMatchObject({ standardCapacity: 20, accessibleCapacity: 1, allocatedCapacity: 21 });
+    });
+
+  it("protege el buffer Estándar y Accesible de forma independiente", () => {
+      const allocated: ParkingArea[] = [{
+        ...sampleAreas[0], standardCapacity: 30, accessibleCapacity: 1, allocatedCapacity: 31,
+      }];
+
+      expect(() => createParkingArea(
+        { facilityId: facility.id, name: "Too many Standard", code: "S-2", standardCapacity: 4, accessibleCapacity: 0 },
+        allocated,
+        { standardCapacity: 33, accessibleCapacity: 2 },
+      )).toThrow(/buffer.*estándar/i);
+      expect(() => createParkingArea(
+        { facilityId: facility.id, name: "Too many Accessible", code: "A-2", standardCapacity: 0, accessibleCapacity: 2 },
+        allocated,
+        { standardCapacity: 33, accessibleCapacity: 2 },
+    )).toThrow(/buffer.*accesible/i);
+  });
+
+  it("calculates typed floating buffers and supports legacy areas", () => {
+    const assignedAreas: ParkingArea[] = [
+      { ...sampleAreas[0], standardCapacity: 20, accessibleCapacity: 1, allocatedCapacity: 21 },
+      { ...sampleAreas[1], isActive: false, standardCapacity: 99, accessibleCapacity: 99, allocatedCapacity: 198 },
+    ];
+
+    expect(splitFacilityCapacity(35, 2)).toEqual({ standardCapacity: 33, accessibleCapacity: 2 });
+    expect(calculateFacilityTypeBuffer({ standardCapacity: 33, accessibleCapacity: 2 }, assignedAreas))
+      .toEqual({ standardCapacity: 13, accessibleCapacity: 1 });
+    expect(calculateFacilityTypeBuffer({ standardCapacity: 10, accessibleCapacity: 0 }, [sampleAreas[0]]))
+      .toEqual({ standardCapacity: 0, accessibleCapacity: 0 });
+  });
+
+  it("edits area capacities by type and protects typed occupancy", () => {
+    const area: ParkingArea = { ...sampleAreas[0], allocatedCapacity: 10, standardCapacity: 8, accessibleCapacity: 2 };
+    const reallocation = {
+      areaId: area.id, newCapacity: 10, standardCapacity: 8, accessibleCapacity: 2,
+      areas: [area], facilityTotalCapacity: 100, facilityAccessibleCapacity: 10,
+      activeOccupancy: 3, activeStandardOccupancy: 2, activeAccessibleOccupancy: 1, expectedVersion: 1,
+    };
+    expect(reallocateAreaCapacity(reallocation)).toMatchObject({ allocatedCapacity: 10, standardCapacity: 8, accessibleCapacity: 2 });
+    expect(() => reallocateAreaCapacity({ ...reallocation, standardCapacity: 1, newCapacity: 3 }))
+      .toThrow(/reducir Estándar/i);
+    expect(() => reallocateAreaCapacity({ ...reallocation, accessibleCapacity: 0, newCapacity: 8 }))
+      .toThrow(/reducir Accesible/i);
+
+    const update = {
+      areaId: area.id, name: "Subsuelo", code: "SUB-1", description: "", allocatedCapacity: 10,
+      standardCapacity: 8, accessibleCapacity: 2, businessUnitId: null, areas: [area],
+      facilityTotalCapacity: 100, facilityAccessibleCapacity: 10, activeOccupancy: 3,
+      activeStandardOccupancy: 2, activeAccessibleOccupancy: 1, expectedVersion: 1,
+    };
+    expect(updateParkingArea(update)).toMatchObject({ standardCapacity: 8, accessibleCapacity: 2 });
+    expect(() => updateParkingArea({ ...update, standardCapacity: 1, allocatedCapacity: 3 }))
+      .toThrow(/reducir Estándar/i);
+    expect(() => updateParkingArea({ ...update, accessibleCapacity: 0, allocatedCapacity: 8 }))
+      .toThrow(/reducir Accesible/i);
+  });
+});
 });

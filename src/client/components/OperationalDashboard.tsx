@@ -75,6 +75,12 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
             {metrics.totalOccupied} de {metrics.totalCapacity} plazas totales
           </span>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block", marginTop: "0.65rem" }}>
+            Estándar: {metrics.standardOccupied} de {metrics.standardCapacity} · {metrics.standardAvailable} libre{metrics.standardAvailable === 1 ? "" : "s"}
+          </span>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block", marginTop: "0.25rem" }}>
+            Accesibles: {metrics.accessibleOccupied} de {metrics.accessibleCapacity} · {metrics.accessibleAvailable} libre{metrics.accessibleAvailable === 1 ? "" : "s"}
+          </span>
         </div>
 
         <div className="glass-panel metric-card">
@@ -198,6 +204,10 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({ metr
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
                     <span>Libres: <strong style={{ color: "var(--text-primary)" }}>{area.available}</strong></span>
                     <span>Capacidad dinámica</span>
+                  </div>
+                  <div style={{ display: "grid", gap: "0.2rem", fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.55rem" }}>
+                    <span>Estándar: {area.standardOccupied} de {area.standardCapacity} · {area.standardAvailable} libre{area.standardAvailable === 1 ? "" : "s"}</span>
+                    <span>Accesibles: {area.accessibleOccupied} de {area.accessibleCapacity} · {area.accessibleAvailable} libre{area.accessibleAvailable === 1 ? "" : "s"}</span>
                   </div>
                 </div>
               );

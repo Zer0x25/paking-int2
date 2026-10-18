@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-18
 
-**Status**: Draft
+**Status**: Approved
 
 **Input**: User request: dividir la capacidad del recinto y de cada área entre plazas Estándar y Accesibles, manteniendo separados los tipos de cuota de negocio.
 
@@ -88,6 +88,7 @@ Como administrador u operador, quiero ver capacidad, ocupación y disponibilidad
 - La capacidad de un área puede ser menor que la suma de los cupos no asignados del recinto; los cupos restantes siguen disponibles como reserva flotante por tipo.
 - La suma de asignaciones Estándar o Accesibles de áreas activas supera el cupo correspondiente del recinto; el sistema bloquea el cambio aunque la suma total de plazas de áreas no supere la capacidad total.
 - Una reducción propuesta queda por debajo de la ocupación activa de su categoría; el cambio se bloquea sin cerrar ni reasignar sesiones.
+- Al migrar un recinto que ya tiene sesiones activas de ambas categorías, la capacidad inicial por tipo y área cubre esas sesiones y conserva las capacidades agregadas existentes.
 - En ingresos simultáneos, una misma plaza restante no puede asignarse más de una vez.
 - Las entradas Estándar no pueden consumir plazas Accesibles. Cuando no hay Accesibles libres, el operador puede confirmar una alternativa Estándar únicamente si existe capacidad Estándar disponible.
 - Si el área elegida no tiene plazas del tipo solicitado pero otra área sí, el sistema debe ofrecer esa alternativa antes de recurrir al cupo Estándar.
@@ -142,6 +143,7 @@ Como administrador u operador, quiero ver capacidad, ocupación y disponibilidad
 - Las plazas no asignadas a áreas siguen formando parte de la reserva flotante del recinto, separadas por tipo.
 - La disponibilidad de cada tipo se mantiene mediante la operación actual de entradas y salidas; el cambio conserva el comportamiento offline vigente.
 - Las nuevas admisiones y configuraciones usan únicamente Estándar y Accesible.
+- La primera migración conserva las sesiones activas existentes: dimensiona cada categoría para su ocupación actual y mantiene las asignaciones totales de áreas; el reparto no ocupado restante puede ajustarse luego desde Configuración.
 
 ## Out of Scope
 

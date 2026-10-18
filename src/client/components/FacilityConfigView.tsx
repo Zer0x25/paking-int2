@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { FacilitySchema, type Facility, type BusinessUnit, type EventBooking, type ParkingArea } from "@core/types/schema";
-import { calculateFacilityBuffer } from "@core/rules/areaAllocationRules";
+import { FacilitySchema, type Facility, type BusinessUnit, type EventBooking, type ParkingArea, type SpaceCategory } from "@core/types/schema";
+import { calculateFacilityBuffer, calculateFacilityTypeBuffer } from "@core/rules/areaAllocationRules";
 import { BusinessUnitManager } from "./BusinessUnitManager";
 import { EventBookingsManager } from "./EventBookingsManager";
 import { apiFetch } from "../api/client";
@@ -9,6 +9,7 @@ interface FacilityConfigViewProps {
   facility: Facility | null;
   businessUnits: BusinessUnit[];
   events: EventBooking[];
+  spaceCategories?: SpaceCategory[];
   onRefresh?: () => void;
   onFacilityCreated?: (facility: Facility, token: string) => void;
   onFacilityDeactivated?: () => void;
@@ -16,6 +17,8 @@ interface FacilityConfigViewProps {
 
 interface ManagedParkingArea extends ParkingArea {
   activeOccupancy?: number;
+  standardOccupied?: number;
+  accessibleOccupied?: number;
   availableSlots?: number;
   occupancyPercentage?: number;
   isSaturated?: boolean;
@@ -25,7 +28,8 @@ interface AreaEditValues {
   name: string;
   code: string;
   description: string;
-  allocatedCapacity: number;
+  standardCapacity: number;
+  accessibleCapacity: number;
   businessUnitId: string | null;
 }
 
@@ -33,6 +37,7 @@ interface ManagedAreaCardProps {
   area: ManagedParkingArea;
   businessUnits: BusinessUnit[];
   floatingBuffer: number;
+  accessibleFloatingBuffer: number;
   saving: boolean;
   deactivating: boolean;
   onSave: (area: ManagedParkingArea, values: AreaEditValues) => Promise<boolean>;
@@ -44,6 +49,7 @@ const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
   area,
   businessUnits,
   floatingBuffer,
+  accessibleFloatingBuffer,
   saving,
   deactivating,
   onSave,
@@ -54,10 +60,17 @@ const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
   const [name, setName] = useState(area.name);
   const [code, setCode] = useState(area.code);
   const [description, setDescription] = useState(area.description || "");
-  const [capacity, setCapacity] = useState(area.allocatedCapacity);
+  const [standardCapacity, setStandardCapacity] = useState(area.standardCapacity ?? area.allocatedCapacity);
+  const [accessibleCapacity, setAccessibleCapacity] = useState(area.accessibleCapacity ?? 0);
   const [businessUnitId, setBusinessUnitId] = useState(area.businessUnitId || "");
   const activeVehicles = area.activeOccupancy || 0;
-  const available = Math.max(0, area.allocatedCapacity - activeVehicles);
+  const standardOccupied = area.standardOccupied ?? activeVehicles;
+  const accessibleOccupied = area.accessibleOccupied ?? 0;
+  const areaStandardCapacity = area.standardCapacity ?? area.allocatedCapacity;
+  const areaAccessibleCapacity = area.accessibleCapacity ?? 0;
+  const standardAvailable = Math.max(0, areaStandardCapacity - standardOccupied);
+  const accessibleAvailable = Math.max(0, areaAccessibleCapacity - accessibleOccupied);
+  const available = standardAvailable + accessibleAvailable;
   const pct = area.allocatedCapacity > 0 ? Math.round((activeVehicles / area.allocatedCapacity) * 100) : 0;
   const exclusiveUnit = businessUnits.find((unit) => unit.id === area.businessUnitId)?.name;
 
@@ -65,18 +78,21 @@ const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
     setName(area.name);
     setCode(area.code);
     setDescription(area.description || "");
-    setCapacity(area.allocatedCapacity);
+    setStandardCapacity(areaStandardCapacity);
+    setAccessibleCapacity(areaAccessibleCapacity);
     setBusinessUnitId(area.businessUnitId || "");
     setEditing(true);
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (Number(standardCapacity) + Number(accessibleCapacity) <= 0) return;
     const saved = await onSave(area, {
       name,
       code,
       description,
-      allocatedCapacity: Number(capacity),
+      standardCapacity: Number(standardCapacity),
+      accessibleCapacity: Number(accessibleCapacity),
       businessUnitId: businessUnitId || null,
     });
     if (saved) setEditing(false);
@@ -103,8 +119,13 @@ const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
             <input id={`edit-area-code-${area.id}`} className="form-input" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} maxLength={10} required />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label" htmlFor={`edit-area-capacity-${area.id}`}>Capacidad asignada</label>
-            <input id={`edit-area-capacity-${area.id}`} className="form-input" type="number" min={activeVehicles} value={capacity} onChange={(event) => setCapacity(Number(event.target.value))} required />
+            <label className="form-label" htmlFor={`edit-area-standard-${area.id}`}>Plazas Estándar del área</label>
+            <input id={`edit-area-standard-${area.id}`} className="form-input" type="number" min={standardOccupied} value={standardCapacity} onChange={(event) => setStandardCapacity(Number(event.target.value))} required />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor={`edit-area-accessible-${area.id}`}>Plazas Accesibles del área</label>
+            <input id={`edit-area-accessible-${area.id}`} className="form-input" type="number" min={accessibleOccupied} max={accessibleFloatingBuffer + areaAccessibleCapacity} value={accessibleCapacity} onChange={(event) => setAccessibleCapacity(Number(event.target.value))} required />
+            <small style={{ color: "var(--text-muted)" }}>Total del área: {Number(standardCapacity || 0) + Number(accessibleCapacity || 0)} plazas</small>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor={`edit-area-unit-${area.id}`}>Régimen de uso</label>
@@ -149,15 +170,17 @@ const ManagedAreaCard: React.FC<ManagedAreaCardProps> = ({
           <strong>{activeVehicles} / {area.allocatedCapacity} plazas ({pct}%)</strong>
         </div>
         <div className="progress-bar-container"><div className="progress-bar-fill" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: pct >= 100 ? "var(--color-danger)" : pct >= 90 ? "var(--color-warning)" : "var(--color-success)" }} /></div>
-        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.3rem", display: "block" }}>Plazas libres: {available}</span>
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.3rem", display: "block" }}>Estándar: {standardOccupied}/{areaStandardCapacity} · {standardAvailable} libres</span>
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>Accesibles: {accessibleOccupied}/{areaAccessibleCapacity} · {accessibleAvailable} libres</span>
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>Total libre: {available}</span>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.6rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Ajustar cupo:</span>
-          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, -5)} disabled={area.allocatedCapacity - 5 < activeVehicles}>-5</button>
-          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, -1)} disabled={area.allocatedCapacity - 1 < activeVehicles}>-1</button>
-          <strong style={{ fontSize: "1.1rem", fontFamily: "var(--font-mono)", minWidth: "2.5rem", textAlign: "center" }}>{area.allocatedCapacity}</strong>
+          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Ajustar estándar:</span>
+          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, -5)} disabled={areaStandardCapacity - 5 < standardOccupied}>-5</button>
+          <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, -1)} disabled={areaStandardCapacity - 1 < standardOccupied}>-1</button>
+          <strong style={{ fontSize: "1.1rem", fontFamily: "var(--font-mono)", minWidth: "2.5rem", textAlign: "center" }}>{areaStandardCapacity}</strong>
           <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, 1)} disabled={floatingBuffer < 1}>+1</button>
           <button type="button" className="btn btn-secondary" style={{ padding: "0.25rem 0.6rem" }} onClick={() => onQuickAdjust(area, 5)} disabled={floatingBuffer < 5}>+5</button>
         </div>
@@ -177,6 +200,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   facility,
   businessUnits,
   events,
+  spaceCategories = [],
   onRefresh,
   onFacilityCreated,
   onFacilityDeactivated,
@@ -185,6 +209,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   const [facilityName, setFacilityName] = useState(facility?.name || "");
   const [facilityAddress, setFacilityAddress] = useState(facility?.address || "");
   const [totalCapacity, setTotalCapacity] = useState(facility?.totalCapacity || 100);
+  const [accessibleCapacity, setAccessibleCapacity] = useState(spaceCategories.find((category) => category.code === "ACC")?.allocatedSlots ?? 0);
   const [savingFacility, setSavingFacility] = useState(false);
   const [creatingFacility, setCreatingFacility] = useState(false);
   const [pendingFacilityDeletion, setPendingFacilityDeletion] = useState(false);
@@ -200,7 +225,8 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   // New Area Form state
   const [newAreaName, setNewAreaName] = useState("");
   const [newAreaCode, setNewAreaCode] = useState("");
-  const [newAreaCapacity, setNewAreaCapacity] = useState(20);
+  const [newAreaStandardCapacity, setNewAreaStandardCapacity] = useState(20);
+  const [newAreaAccessibleCapacity, setNewAreaAccessibleCapacity] = useState(0);
   const [newAreaBuId, setNewAreaBuId] = useState<string>("");
   const [newAreaDesc, setNewAreaDesc] = useState("");
   const [creatingArea, setCreatingArea] = useState(false);
@@ -214,8 +240,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       setFacilityName(facility.name);
       setFacilityAddress(facility.address || "");
       setTotalCapacity(facility.totalCapacity);
+      setAccessibleCapacity(spaceCategories.find((category) => category.code === "ACC")?.allocatedSlots ?? 0);
     }
-  }, [facility]);
+  }, [facility, spaceCategories]);
 
   // Fetch areas from server or local
   const fetchAreas = async () => {
@@ -238,10 +265,13 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     fetchAreas();
   }, [facility?.id]);
 
-  const allocatedSum = areas.filter((a) => a.isActive).reduce((sum, a) => sum + a.allocatedCapacity, 0);
+  const activeAreas = areas.filter((area) => area.isActive);
+  const allocatedSum = activeAreas.reduce((sum, a) => sum + a.allocatedCapacity, 0);
   const currentTotal = Number(totalCapacity) || 0;
   const floatingBuffer = calculateFacilityBuffer(currentTotal, areas);
-  const activeAreas = areas.filter((area) => area.isActive);
+  const accessibleCurrent = Math.max(0, Number(accessibleCapacity) || 0);
+  const standardCurrent = Math.max(0, currentTotal - accessibleCurrent);
+  const typeBuffer = calculateFacilityTypeBuffer({ standardCapacity: standardCurrent, accessibleCapacity: accessibleCurrent }, activeAreas);
   const inactiveAreas = areas.filter((area) => !area.isActive);
 
   const handleCreateFacility = async (event: React.FormEvent) => {
@@ -252,7 +282,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       const response = await apiFetch("/api/facilities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: facilityName.trim(), address: facilityAddress.trim(), totalCapacity: Number(totalCapacity) }),
+        body: JSON.stringify({ name: facilityName.trim(), address: facilityAddress.trim(), totalCapacity: Number(totalCapacity), accessibleCapacity: Number(accessibleCapacity) }),
       });
       const data = await response.json() as { facility?: unknown; token?: unknown; error?: string };
       const parsedFacility = FacilitySchema.safeParse(data.facility);
@@ -307,6 +337,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           name: facilityName,
           address: facilityAddress,
           totalCapacity: Number(totalCapacity),
+          accessibleCapacity: Number(accessibleCapacity),
         }),
       });
 
@@ -329,6 +360,11 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     e.preventDefault();
     if (!facility?.id) return;
     if (!newAreaName.trim() || !newAreaCode.trim()) return;
+    const allocatedCapacity = Number(newAreaStandardCapacity) + Number(newAreaAccessibleCapacity);
+    if (allocatedCapacity <= 0) {
+      setFeedback({ text: "El área debe tener al menos una plaza asignada.", type: "error" });
+      return;
+    }
 
     setCreatingArea(true);
     setFeedback(null);
@@ -337,7 +373,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       name: newAreaName.trim(),
       code: newAreaCode.trim().toUpperCase(),
       description: newAreaDesc.trim(),
-      allocatedCapacity: Number(newAreaCapacity),
+      allocatedCapacity,
+      standardCapacity: Number(newAreaStandardCapacity),
+      accessibleCapacity: Number(newAreaAccessibleCapacity),
       businessUnitId: newAreaBuId || null,
     };
 
@@ -356,7 +394,8 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
         setNewAreaName("");
         setNewAreaCode("");
         setNewAreaDesc("");
-        setNewAreaCapacity(20);
+        setNewAreaStandardCapacity(20);
+        setNewAreaAccessibleCapacity(0);
         setNewAreaBuId("");
         fetchAreas();
         if (onRefresh) onRefresh();
@@ -370,11 +409,11 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
 
   // Handle dynamic reallocation of an area
   const handleQuickAdjustCapacity = async (area: ParkingArea, delta: number) => {
-    const targetCapacity = Math.max(0, area.allocatedCapacity + delta);
-    await handleUpdateAreaCapacity(area.id, targetCapacity, area.version);
+    const standardCapacity = Math.max(0, (area.standardCapacity ?? area.allocatedCapacity) + delta);
+    await handleUpdateAreaCapacity(area.id, standardCapacity, area.accessibleCapacity ?? 0, area.version);
   };
 
-  const handleUpdateAreaCapacity = async (areaId: string, newCapacity: number, version: number) => {
+  const handleUpdateAreaCapacity = async (areaId: string, standardCapacity: number, accessibleCapacity: number, version: number) => {
     if (!facility?.id) return;
     setFeedback(null);
 
@@ -383,7 +422,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          allocatedCapacity: newCapacity,
+          allocatedCapacity: standardCapacity + accessibleCapacity,
+          standardCapacity,
+          accessibleCapacity,
           version,
         }),
       });
@@ -392,7 +433,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
       if (!res.ok) {
         setFeedback({ text: data.error || "No se pudo actualizar la capacidad", type: "error" });
       } else {
-        setFeedback({ text: `✓ Capacidad de "${data.area.name}" reajustada a ${data.area.allocatedCapacity} plazas`, type: "success" });
+        setFeedback({ text: `✓ Capacidad de "${data.area.name}" reajustada: ${data.area.standardCapacity} Estándar + ${data.area.accessibleCapacity} Accesibles`, type: "success" });
         fetchAreas();
         if (onRefresh) onRefresh();
       }
@@ -497,6 +538,11 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
               <label className="form-label" htmlFor="new-facility-capacity">Capacidad total</label>
               <input id="new-facility-capacity" className="form-input" type="number" min={1} step={1} value={totalCapacity} onChange={(event) => setTotalCapacity(Number(event.target.value))} required />
             </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" htmlFor="new-facility-accessible">Plazas Accesibles</label>
+              <input id="new-facility-accessible" className="form-input" type="number" min={0} max={totalCapacity} step={1} value={accessibleCapacity} onChange={(event) => setAccessibleCapacity(Number(event.target.value))} required />
+              <small style={{ color: "var(--text-muted)" }}>{Math.max(0, Number(totalCapacity) - Number(accessibleCapacity))} plazas Estándar (calculadas)</small>
+            </div>
             <button type="submit" disabled={creatingFacility} className="btn btn-primary" style={{ padding: "0.75rem 1.5rem", whiteSpace: "nowrap" }}>
               {creatingFacility ? "Creando recinto..." : "Crear recinto"}
             </button>
@@ -568,7 +614,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             {currentTotal}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-            Límite físico total
+            {standardCurrent} Estándar + {accessibleCurrent} Accesibles
           </span>
         </div>
 
@@ -580,7 +626,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             {allocatedSum}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-            Asignadas a {activeAreas.length} áreas activas
+            {activeAreas.reduce((sum, area) => sum + (area.standardCapacity ?? area.allocatedCapacity), 0)} Estándar · {activeAreas.reduce((sum, area) => sum + (area.accessibleCapacity ?? 0), 0)} Accesibles
           </span>
         </div>
 
@@ -592,7 +638,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             {floatingBuffer}
           </div>
           <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-            Disponibles para nuevas áreas
+            {typeBuffer.standardCapacity} Estándar · {typeBuffer.accessibleCapacity} Accesibles disponibles para nuevas áreas
           </span>
         </div>
       </div>
@@ -652,6 +698,21 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             />
           </div>
 
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor="facility-accessible-capacity">Plazas Accesibles</label>
+            <input
+              id="facility-accessible-capacity"
+              type="number"
+              className="form-input"
+              min={Math.max(0, activeAreas.reduce((sum, area) => sum + (area.accessibleCapacity ?? 0), 0))}
+              max={currentTotal}
+              value={accessibleCapacity}
+              onChange={(event) => setAccessibleCapacity(Number(event.target.value))}
+              required
+            />
+            <small style={{ color: "var(--text-muted)" }}>{standardCurrent} plazas Estándar (calculadas)</small>
+          </div>
+
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
             <button
               type="submit"
@@ -688,8 +749,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           <form onSubmit={handleCreateArea}>
             <div className="config-area-fields">
               <div className="form-group">
-                <label className="form-label">Nombre del Área</label>
+                <label className="form-label" htmlFor="new-area-name">Nombre del Área</label>
                 <input
+                  id="new-area-name"
                   type="text"
                   className="form-input"
                   placeholder="ej. Sector Norte Aire Libre"
@@ -700,8 +762,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
               </div>
 
               <div className="form-group">
-                <label className="form-label">Código Único</label>
+                <label className="form-label" htmlFor="new-area-code">Código Único</label>
                 <input
+                  id="new-area-code"
                   type="text"
                   className="form-input"
                   placeholder="NORTE-1"
@@ -713,18 +776,34 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
               </div>
 
               <div className="form-group">
-                <label className="form-label">
-                  Capacidad Asignada (Máx: {floatingBuffer})
-                </label>
+                <label className="form-label" htmlFor="new-area-standard">Plazas Estándar del área</label>
+                <small style={{ color: "var(--text-muted)" }}>Disponibles para asignar: {typeBuffer.standardCapacity}</small>
                 <input
+                  id="new-area-standard"
                   type="number"
                   className="form-input"
-                  min={1}
-                  max={floatingBuffer}
-                  value={newAreaCapacity}
-                  onChange={(e) => setNewAreaCapacity(Number(e.target.value))}
+                  min={0}
+                  max={typeBuffer.standardCapacity}
+                  value={newAreaStandardCapacity}
+                  onChange={(e) => setNewAreaStandardCapacity(Number(e.target.value))}
                   required
                 />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="new-area-accessible">Plazas Accesibles del área</label>
+                <small style={{ color: "var(--text-muted)" }}>Disponibles para asignar: {typeBuffer.accessibleCapacity}</small>
+                <input
+                  id="new-area-accessible"
+                  type="number"
+                  className="form-input"
+                  min={0}
+                  max={typeBuffer.accessibleCapacity}
+                  value={newAreaAccessibleCapacity}
+                  onChange={(e) => setNewAreaAccessibleCapacity(Number(e.target.value))}
+                  required
+                />
+                <small style={{ color: "var(--text-muted)" }}>Total del área: {Number(newAreaStandardCapacity || 0) + Number(newAreaAccessibleCapacity || 0)} plazas</small>
               </div>
 
               <div className="form-group">
@@ -746,8 +825,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
 
             <div className="config-area-description-row">
               <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                <label className="form-label">Descripción o Referencias Físicas</label>
+                <label className="form-label" htmlFor="new-area-description">Descripción o Referencias Físicas</label>
                 <input
+                  id="new-area-description"
                   type="text"
                   className="form-input"
                   placeholder="ej. Junto al pabellón de eventos, acceso por calle trasera"
@@ -758,7 +838,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
 
               <button
                 type="submit"
-                disabled={creatingArea || floatingBuffer <= 0}
+                disabled={creatingArea || typeBuffer.standardCapacity + typeBuffer.accessibleCapacity <= 0 || Number(newAreaStandardCapacity) + Number(newAreaAccessibleCapacity) <= 0}
                 className="btn btn-primary"
                 style={{ padding: "0.75rem 1.5rem", whiteSpace: "nowrap" }}
               >
@@ -788,7 +868,8 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
                 key={area.id}
                 area={area}
                 businessUnits={businessUnits}
-                floatingBuffer={floatingBuffer}
+                floatingBuffer={typeBuffer.standardCapacity}
+                accessibleFloatingBuffer={typeBuffer.accessibleCapacity}
                 saving={savingArea}
                 deactivating={deactivatingAreaId === area.id}
                 onSave={handleSaveArea}

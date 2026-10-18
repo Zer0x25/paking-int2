@@ -2,7 +2,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { Facility } from "@core/types/schema";
+import type { Facility, SpaceCategory } from "@core/types/schema";
 import { FacilityConfigView } from "@client/components/FacilityConfigView";
 import { apiFetch } from "@client/api/client";
 
@@ -36,10 +36,36 @@ describe("FacilityConfigView facility lifecycle", () => {
     fireEvent.change(screen.getByLabelText("Nombre del recinto"), { target: { value: "Recinto de prueba" } });
     fireEvent.change(screen.getByLabelText("Dirección"), { target: { value: "Calle 1" } });
     fireEvent.change(screen.getByLabelText("Capacidad total"), { target: { value: "80" } });
+    fireEvent.change(screen.getByLabelText("Plazas Accesibles"), { target: { value: "2" } });
+    expect(screen.getByText(/78 plazas Estándar/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Crear recinto" }));
 
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/facilities", expect.objectContaining({ method: "POST" })));
+    const createBody = JSON.parse(vi.mocked(apiFetch).mock.calls[0][1]?.body as string) as { accessibleCapacity: number };
+    expect(createBody.accessibleCapacity).toBe(2);
     await waitFor(() => expect(onFacilityCreated).toHaveBeenCalledWith(facility, "assigned-token"));
+  });
+
+  it("creates a parking area with separate Standard and Accessible allocations", async () => {
+    const categories: SpaceCategory[] = [
+      { id: "cat-std", facilityId: facility.id, name: "Estándar", code: "STD", allocatedSlots: 73 },
+      { id: "cat-acc", facilityId: facility.id, name: "Accesible", code: "ACC", allocatedSlots: 7 },
+    ];
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(response({ areas: [] }))
+      .mockResolvedValueOnce(response({ area: { id: "area-new", name: "Norte", standardCapacity: 20, accessibleCapacity: 1, allocatedCapacity: 21 } }))
+      .mockResolvedValueOnce(response({ areas: [] }));
+    render(<FacilityConfigView facility={facility} businessUnits={[]} events={[]} spaceCategories={categories} />);
+
+    fireEvent.change(screen.getByLabelText("Nombre del Área"), { target: { value: "Norte" } });
+    fireEvent.change(screen.getByLabelText("Código Único"), { target: { value: "NORTE" } });
+    fireEvent.change(screen.getByLabelText("Plazas Estándar del área"), { target: { value: "20" } });
+    fireEvent.change(screen.getByLabelText("Plazas Accesibles del área"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Crear Área" }));
+
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith(`/api/facilities/${facility.id}/areas`, expect.objectContaining({ method: "POST" })));
+    const createCall = vi.mocked(apiFetch).mock.calls.find(([url, options]) => String(url).endsWith("/areas") && options?.method === "POST");
+    expect(JSON.parse(createCall?.[1]?.body as string)).toMatchObject({ standardCapacity: 20, accessibleCapacity: 1 });
   });
 
   it("edits the facility and confirms logical deactivation", async () => {

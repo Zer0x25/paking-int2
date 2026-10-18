@@ -332,6 +332,7 @@ export const App: React.FC = () => {
               facility={facility}
               businessUnits={businessUnits}
               events={events}
+              spaceCategories={spaceCategories}
               onRefresh={refreshActiveView}
               onFacilityDeactivated={clearPrivateViewState}
             />

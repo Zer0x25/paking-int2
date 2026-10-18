@@ -45,6 +45,9 @@ async function createFacility(totalCapacity = 100): Promise<{ id: string }> {
   await database.prepare(
     "INSERT INTO facilities (id, name, address, total_capacity, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
   ).bind(id, `Persisted facility ${id}`, "Test address", totalCapacity, now, now).run();
+  await database.prepare(
+    "INSERT INTO space_categories (id, facility_id, name, code, allocated_slots) VALUES (?, ?, 'General / Estándar', 'STD', ?), (?, ?, 'Accesible', 'ACC', 0)",
+  ).bind(`cat-std-${id}`, id, totalCapacity, `cat-acc-${id}`, id).run();
   return { id };
 }
 
@@ -205,9 +208,12 @@ describe("Configuration persistence through the Worker API", () => {
     const catalogs = await workerFetch(`/api/facilities/${facility.id}/catalogs`, { headers: jsonHeaders(token) });
     expect(catalogs.status).toBe(200);
     const { categories } = await catalogs.json() as { categories: { id: string; name: string; code: string; allocatedSlots: number }[] };
-    expect(categories).toEqual([expect.objectContaining({ name: "General / Estándar", code: "STD", allocatedSlots: 20 })]);
+    expect(categories).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "General / Estándar", code: "STD", allocatedSlots: 20 }),
+      expect.objectContaining({ name: "Accesible", code: "ACC", allocatedSlots: 0 }),
+    ]));
 
-    const categoryId = categories[0]?.id;
+    const categoryId = categories.find(({ code }) => code === "STD")?.id;
     expect(categoryId).toBeTruthy();
     const unitResponse = await workerFetch(`/api/facilities/${facility.id}/business-units`, {
       method: "POST",
@@ -281,6 +287,44 @@ describe("Configuration persistence through the Worker API", () => {
     expect(await countRows(getD1Database(), "SELECT COUNT(*) AS count FROM facilities WHERE name IN ('First venue', 'Second venue')")).toBe(1);
   });
 
+  it("configures the facility split, distributes it across areas, and rejects type over-allocation", async () => {
+    const { token: bootstrapToken } = await createUnassignedAdmin();
+    const createdResponse = await workerFetch("/api/facilities", {
+      method: "POST",
+      headers: jsonHeaders(bootstrapToken),
+      body: JSON.stringify({ name: "Typed capacity venue", totalCapacity: 35, accessibleCapacity: 2 }),
+    });
+    expect(createdResponse.status).toBe(201);
+    const { facility, token } = await createdResponse.json() as { facility: { id: string }; token: string };
+
+    const catalogResponse = await workerFetch(`/api/facilities/${facility.id}/catalogs`, { headers: jsonHeaders(token) });
+    const catalog = await catalogResponse.json() as { categories: { code: string; allocatedSlots: number }[] };
+    expect(catalog.categories.find(({ code }) => code === "STD")?.allocatedSlots).toBe(33);
+    expect(catalog.categories.find(({ code }) => code === "ACC")?.allocatedSlots).toBe(2);
+
+    const areas = [] as { id: string; standardCapacity: number; accessibleCapacity: number; allocatedCapacity: number }[];
+    for (const [code, standardCapacity] of [["A", 20], ["B", 10]] as const) {
+      const response = await workerFetch(`/api/facilities/${facility.id}/areas`, {
+        method: "POST",
+        headers: jsonHeaders(token),
+        body: JSON.stringify({ name: `Area ${code}`, code, standardCapacity, accessibleCapacity: 1 }),
+      });
+      expect(response.status).toBe(201);
+      areas.push((await response.json() as { area: typeof areas[number] }).area);
+    }
+    expect(areas).toEqual(expect.arrayContaining([
+      expect.objectContaining({ standardCapacity: 20, accessibleCapacity: 1, allocatedCapacity: 21 }),
+      expect.objectContaining({ standardCapacity: 10, accessibleCapacity: 1, allocatedCapacity: 11 }),
+    ]));
+
+    const excessAccessible = await workerFetch(`/api/facilities/${facility.id}/areas`, {
+      method: "POST",
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ name: "Area C", code: "C", standardCapacity: 0, accessibleCapacity: 1 }),
+    });
+    expect(excessAccessible.status).toBe(409);
+  });
+
   it("rejects duplicate codes, stale edits, capacity races, and audit-only partial commits", async () => {
     const facility = await createFacility(100);
     const token = await adminToken(facility.id);
@@ -322,6 +366,9 @@ describe("Configuration persistence through the Worker API", () => {
       body: JSON.stringify({ name, code: `R${crypto.randomUUID().slice(0, 6)}`, allocatedCapacity: 60 }),
     })));
     expect(raceResponses.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const losingResponse = raceResponses.find(({ status }) => status === 409);
+    const losingBody = await losingResponse?.json() as { error: string } | undefined;
+    expect(losingBody?.error).toMatch(/buffer disponible Estándar \(40\)/);
     expect(await countRows(getD1Database(), "SELECT COALESCE(SUM(allocated_capacity), 0) AS count FROM parking_areas WHERE facility_id = ?", raceFacility.id)).toBeLessThanOrEqual(100);
 
     const database = getD1Database();
