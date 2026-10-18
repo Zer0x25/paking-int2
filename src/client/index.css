@@ -167,6 +167,15 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
 .gate-step-actions { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 0.65rem; margin-top: 0.5rem; }
 .gate-step-actions .btn { width: 100%; }
 .gate-input-hint { display: block; margin-top: 0.35rem; color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.gate-plate-search { position: relative; z-index: 2; }
+.gate-plate-suggestions { position: absolute; z-index: 10; top: calc(100% + 0.35rem); inset-inline: 0; display: grid; max-height: min(18rem, 42vh); overflow-y: auto; padding: 0.35rem; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface-raised); box-shadow: 0 12px 28px rgb(0 0 0 / 0.24); }
+.gate-plate-suggestion { display: grid; min-width: 0; gap: 0.15rem; padding: 0.7rem 0.8rem; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer; }
+.gate-plate-suggestion:hover, .gate-plate-suggestion.is-active { outline: 2px solid var(--color-accent); outline-offset: -2px; background: var(--color-surface-sunken); }
+.gate-active-match { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.85rem; padding: 0.85rem 1rem; border: 1px solid var(--color-danger); border-radius: var(--radius-sm); background: var(--color-danger-surface); }
+.gate-active-match > div { display: grid; min-width: 0; gap: 0.15rem; }
+.gate-active-match .gate-eyebrow { margin-bottom: 0.1rem; }
+.gate-active-match .gate-session-context { white-space: normal; }
+.gate-search-status { margin: 0.65rem 0 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .gate-entry-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1rem; }
 .gate-area-field { grid-column: 1 / -1; }
 .gate-capacity-hint { margin-top: -0.25rem; padding: 0.6rem 0.75rem; border-radius: var(--radius-sm); background: var(--color-info-surface); color: var(--color-info); font-size: var(--font-size-sm); }
@@ -281,6 +290,9 @@ button:disabled { cursor: not-allowed; opacity: 0.62; }
 @media (max-width: 480px) {
   .gate-entry-fields { grid-template-columns: minmax(0, 1fr); }
   .gate-area-field { grid-column: auto; }
+  .gate-active-match { align-items: stretch; flex-direction: column; padding: 0.75rem; }
+  .gate-active-match > .btn { width: 100%; }
+  .gate-plate-suggestion { padding: 0.7rem; }
   .gate-operation-header h2, .gate-active-header h2 { font-size: 1.15rem; }
   .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
   .main-content { padding-inline: 0.75rem; }

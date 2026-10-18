@@ -94,6 +94,7 @@ type GateSession = {
 
 let fetchCalls: RecordedFetch[] = [];
 let activeSessions: GateSession[] = [];
+let activeSessionsResponse: Promise<Response> | null = null;
 let writeFailure: (() => Response) | null = null;
 let nextSessionId = 1;
 
@@ -122,7 +123,7 @@ const makeSession = (overrides: Partial<GateSession> = {}): GateSession => ({
 
 const normalizePlate = (plate: string) => plate.replace(/-/g, "").toUpperCase();
 
-const renderGate = async () => {
+const renderGate = async ({ waitForSessions = true }: { waitForSessions?: boolean } = {}) => {
   let view!: ReturnType<typeof render>;
   await act(async () => {
     view = render(
@@ -136,15 +137,17 @@ const renderGate = async () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+  if (waitForSessions) await waitFor(() => expect(screen.queryByText(/cargando vehículos activos/i)).toBeNull());
   return view;
 };
 
 const enterPlate = (plate: string) => {
-  fireEvent.change(screen.getByRole("textbox", { name: /patente/i }), {
+  fireEvent.change(screen.getByRole("combobox", { name: /patente/i }), {
     target: { value: plate },
   });
-  fireEvent.click(screen.getByRole("button", { name: /^registrar$/i }));
 };
+
+const continueEntry = () => fireEvent.click(screen.getByRole("button", { name: /^registrar entrada$/i }));
 
 const selectEntryDestination = () => {
   fireEvent.change(screen.getByLabelText(/unidad/i), {
@@ -164,6 +167,7 @@ const hasRequestValue = (value: string) =>
 beforeEach(() => {
   fetchCalls = [];
   activeSessions = [];
+  activeSessionsResponse = null;
   writeFailure = null;
   nextSessionId = 1;
   localStorage.setItem("auth_token", "test-auth-token");
@@ -183,12 +187,27 @@ beforeEach(() => {
       });
 
       if (method === "GET") {
+        if (activeSessionsResponse) return activeSessionsResponse;
         const sessions = activeSessions.filter((session) => session.status === "active");
         return jsonResponse({ sessions, count: sessions.length });
       }
       if (writeFailure) return writeFailure();
 
       const payload = body ? (JSON.parse(body) as Record<string, unknown>) : {};
+      const sessionExitMatch = url.pathname.match(/\/parking-sessions\/([^/]+)\/exit$/);
+      if (sessionExitMatch) {
+        const session = activeSessions.find((candidate) => candidate.id === decodeURIComponent(sessionExitMatch[1]));
+        if (!session) return jsonResponse({ message: "No hay una sesión activa" }, 404);
+        const completed: GateSession = {
+          ...session,
+          status: "completed",
+          exitTime: "2026-10-17T10:15:00.000Z",
+          durationMinutes: 15,
+          version: session.version + 1,
+        };
+        activeSessions = activeSessions.map((candidate) => candidate.id === session.id ? completed : candidate);
+        return jsonResponse({ session: completed });
+      }
       if (url.pathname.endsWith("/parking-sessions/entry")) {
         const session = makeSession({
           businessUnitId: String(payload.businessUnitId ?? "unit-hotel"),
@@ -237,58 +256,134 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("flujo guiado de garita", () => {
-  it("starts with only the plate field and Registrar as the operation action", async () => {
+describe("flujo inteligente de garita", () => {
+  it("starts with only the plate field and no generic movement selector", async () => {
     await renderGate();
 
-    expect(screen.getByRole("textbox", { name: /patente/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^registrar$/i })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: /patente/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^registrar$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^entrada$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^salida$/i })).toBeNull();
     expect(screen.queryByLabelText(/unidad|tipo de espacio|área|sector/i)).toBeNull();
   });
 
-  it("keeps an invalid plate on the first step and announces the format error", async () => {
+  it("keeps an incomplete plate on the first step without enabling a movement", async () => {
     await renderGate();
 
     enterPlate("ABC");
 
-    expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.getByRole("textbox", { name: /patente/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^registrar$/i })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: /patente/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^registrar entrada$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^registrar salida$/i })).toBeNull();
+  });
+
+  it("shows only Registrar entrada for a complete valid plate without an active session", async () => {
+    await renderGate();
+
+    enterPlate("AA1A11");
+
+    expect(screen.getByRole("button", { name: /^registrar entrada$/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^registrar salida$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^entrada$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^salida$/i })).toBeNull();
   });
 
-  it("reveals Entrada and Salida after registering a valid plate", async () => {
-    await renderGate();
-
-    enterPlate("AA1A11");
-
-    expect(screen.getByRole("button", { name: /^entrada$/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^salida$/i })).toBeTruthy();
-    expect(screen.getByText("AA-1A-11")).toBeTruthy();
-  });
-
-  it("uses the retained plate when the operator chooses Salida", async () => {
+  it("shows the active session exit and records it only after explicit confirmation", async () => {
     activeSessions = [makeSession({ licensePlate: "AA1A11" })];
     await renderGate();
-    enterPlate("AA1A11");
+    enterPlate("aa-1a-11");
 
-    fireEvent.click(screen.getByRole("button", { name: /^salida$/i }));
+    expect(screen.getByRole("button", { name: /^registrar salida$/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^registrar entrada$/i })).toBeNull();
+    expect(screen.getByText(/vehículo dentro del recinto/i)).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: /patente/i }) as HTMLInputElement).value).toBe("AA-1A-11");
+    expect(activeSessions[0].status).toBe("active");
+
+    fireEvent.click(screen.getByRole("button", { name: /^registrar salida$/i }));
 
     await waitFor(() => {
-      expect(hasRequestValue("AA-1A-11") || hasRequestValue("AA1A11")).toBe(true);
-      expect(screen.queryByRole("button", { name: /^entrada$/i })).toBeNull();
-      expect((screen.getByRole("textbox", { name: /patente/i }) as HTMLInputElement).value).toBe("");
+      expect(fetchCalls.some((call) => call.method === "POST" && call.url.endsWith("/gate-session-1/exit"))).toBe(true);
+      expect(screen.queryByRole("button", { name: /^registrar entrada$/i })).toBeNull();
+      expect((screen.getByRole("combobox", { name: /patente/i }) as HTMLInputElement).value).toBe("");
     });
     expect(activeSessions[0].status).toBe("completed");
+  });
+
+  it("does not show a movement decision until the initial active-session list is loaded", async () => {
+    let resolveSessions!: (response: Response) => void;
+    activeSessionsResponse = new Promise<Response>((resolve) => { resolveSessions = resolve; });
+    await renderGate({ waitForSessions: false });
+    enterPlate("AA1A11");
+
+    expect(screen.getByText(/consultando vehículos activos/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^registrar entrada$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^registrar salida$/i })).toBeNull();
+
+    await act(async () => resolveSessions(jsonResponse({ sessions: [], count: 0 })));
+    expect(await screen.findByRole("button", { name: /^registrar entrada$/i })).toBeTruthy();
+  });
+
+  it("shows at most five current-facility active sessions for a normalized prefix without querying per key", async () => {
+    activeSessions = [
+      makeSession({ licensePlate: "AA1A11" }),
+      makeSession({ licensePlate: "AA2A11" }),
+      makeSession({ licensePlate: "AA3A11" }),
+      makeSession({ licensePlate: "AA4A11" }),
+      makeSession({ licensePlate: "AA5A11" }),
+      makeSession({ licensePlate: "AA6A11" }),
+      makeSession({ licensePlate: "AA7A11", facilityId: "facility-other" }),
+      makeSession({ licensePlate: "AA8A11", status: "completed" }),
+    ];
+    await renderGate();
+    const requestsBeforeTyping = fetchCalls.length;
+    const input = screen.getByRole("combobox", { name: /patente/i });
+
+    fireEvent.change(input, { target: { value: "a" } });
+    fireEvent.change(input, { target: { value: "aa" } });
+
+    expect(screen.getAllByRole("option")).toHaveLength(5);
+    expect(screen.getByRole("option", { name: /AA-1A-11.*Hotel.*Estándar.*flotante/i })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /AA-7A-11/i })).toBeNull();
+    expect(screen.queryByRole("option", { name: /AA-8A-11/i })).toBeNull();
+    expect(fetchCalls).toHaveLength(requestsBeforeTyping);
+  });
+
+  it("lets the operator select suggestions with keyboard and requires an explicit exit action", async () => {
+    activeSessions = [makeSession({ licensePlate: "AA1A11", parkingAreaId: "area-basement" })];
+    await renderGate();
+    const input = screen.getByRole("combobox", { name: /patente/i });
+    fireEvent.change(input, { target: { value: "AA" } });
+
+    expect(screen.getByRole("listbox", { name: /vehículos activos/i })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /AA-1A-11.*Hotel.*Estándar.*Subsuelo/i })).toBeTruthy();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect((input as HTMLInputElement).getAttribute("aria-activedescendant")).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect((input as HTMLInputElement).value).toBe("AA-1A-11");
+    expect(screen.getByRole("button", { name: /^registrar salida$/i })).toBeTruthy();
+    expect(activeSessions[0].status).toBe("active");
+    expect(fetchCalls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("closes the suggestions with Escape and still allows an unmatched entry", async () => {
+    activeSessions = [makeSession({ licensePlate: "AA1A11" })];
+    await renderGate();
+    const input = screen.getByRole("combobox", { name: /patente/i });
+    fireEvent.change(input, { target: { value: "AA" } });
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.change(input, { target: { value: "BB2B22" } });
+    expect(screen.getByRole("button", { name: /^registrar entrada$/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^registrar salida$/i })).toBeNull();
   });
 
   it("waits for explicit confirmation and submits the selected entry destination", async () => {
     await renderGate();
     enterPlate("AA1A11");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
 
     expect(screen.getByRole("button", { name: /confirmar entrada/i })).toBeTruthy();
     expect(hasRequestValue("unit-events")).toBe(false);
@@ -308,7 +403,7 @@ describe("flujo guiado de garita", () => {
   it("offers an alternative area with Accessible capacity and lets the operator select it", async () => {
     await renderGate();
     enterPlate("AA1A11");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
     fireEvent.change(screen.getByLabelText(/unidad/i), { target: { value: "unit-events" } });
     fireEvent.change(screen.getByLabelText(/tipo de espacio/i), { target: { value: "space-accessible" } });
     fireEvent.change(screen.getByLabelText(/área|sector/i), { target: { value: "area-basement" } });
@@ -328,7 +423,7 @@ describe("flujo guiado de garita", () => {
   it("requires explicit confirmation before using Standard after Accessible capacity is exhausted", async () => {
     await renderGate();
     enterPlate("AA1A11");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
     selectEntryDestination();
     writeFailure = () => {
       writeFailure = null;
@@ -358,7 +453,7 @@ describe("flujo guiado de garita", () => {
 
     await renderGate();
     enterPlate("AA1A11");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
     fireEvent.click(screen.getByRole("button", { name: /confirmar entrada/i }));
 
     await waitFor(() => {
@@ -373,17 +468,16 @@ describe("flujo guiado de garita", () => {
   it("returns to the plate step after a successful confirmed entry", async () => {
     await renderGate();
     enterPlate("AA1A11");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
     selectEntryDestination();
 
     fireEvent.click(screen.getByRole("button", { name: /confirmar entrada/i }));
 
     await waitFor(() => {
-      const plateInput = screen.getByRole("textbox", { name: /patente/i }) as HTMLInputElement;
+      const plateInput = screen.getByRole("combobox", { name: /patente/i }) as HTMLInputElement;
       expect(plateInput.value).toBe("");
-      expect(screen.getByRole("button", { name: /^registrar$/i })).toBeTruthy();
-      expect(screen.queryByRole("button", { name: /^entrada$/i })).toBeNull();
-      expect(screen.queryByRole("button", { name: /^salida$/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^registrar entrada$/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^registrar salida$/i })).toBeNull();
     });
     expect(activeSessions).toHaveLength(1);
     expect(activeSessions[0]).toMatchObject({
@@ -399,12 +493,12 @@ describe("flujo guiado de garita", () => {
     vi.stubGlobal("navigator", { onLine: false });
     await renderGate();
     enterPlate("ZX9Z88");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
     selectEntryDestination();
 
     fireEvent.click(screen.getByRole("button", { name: /confirmar entrada/i }));
 
-    await waitFor(() => expect(screen.getByText(/paso 1 de 3 · patente/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/paso 1 de 2/i)).toBeTruthy());
     expect(screen.queryByRole("alert")).toBeNull();
     const savedSession = (await getActiveSessions("facility-1")).find((session) => session.licensePlate === "ZX9Z88");
     const queuedEntry = (await getPendingOutboxMutations()).find(
@@ -429,19 +523,15 @@ describe("flujo guiado de garita", () => {
   it("preserves the plate and chosen destination when moving back and correcting the plate", async () => {
     await renderGate();
     enterPlate("AA1A11");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
     selectEntryDestination();
 
     fireEvent.click(screen.getByRole("button", { name: /^volver$/i }));
-    expect(screen.getByText("AA-1A-11")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /volver a corregir patente/i }));
-
-    const plateInput = screen.getByRole("textbox", { name: /patente/i }) as HTMLInputElement;
+    const plateInput = screen.getByRole("combobox", { name: /patente/i }) as HTMLInputElement;
     expect(plateInput.value.replace(/-/g, "")).toBe("AA1A11");
 
     fireEvent.change(plateInput, { target: { value: "BB2B22" } });
-    fireEvent.click(screen.getByRole("button", { name: /^registrar$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
 
     expect((screen.getByLabelText(/unidad/i) as HTMLSelectElement).value).toBe("unit-events");
     expect((screen.getByLabelText(/tipo de espacio/i) as HTMLSelectElement).value).toBe("space-accessible");
@@ -452,7 +542,7 @@ describe("flujo guiado de garita", () => {
   it("retains the entry step and chosen values after a registration failure", async () => {
     await renderGate();
     enterPlate("AA1A11");
-    fireEvent.click(screen.getByRole("button", { name: /^entrada$/i }));
+    continueEntry();
     selectEntryDestination();
     writeFailure = () => jsonResponse({ message: "No se pudo registrar" }, 503);
 

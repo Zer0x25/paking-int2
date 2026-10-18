@@ -21,7 +21,7 @@ import { findStaleActiveSessionIds, getLocalEntryValidationError, mergeActivePar
 import { createUuid } from "@core/utils/uuid";
 import { apiFetch } from "../api/client";
 
-type GateStep = "plate" | "movement" | "entry-details";
+type GateStep = "plate" | "entry-details";
 
 interface VehicleGatePanelProps {
   facilityId: string;
@@ -46,6 +46,8 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
 }) => {
   const [step, setStep] = useState<GateStep>("plate");
   const [plate, setPlate] = useState("");
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(businessUnits[0]?.id || "");
   const entrySpaceCategories = spaceCategories.filter((category) => category.code === "STD" || category.code === "ACC");
   const standardCategory = entrySpaceCategories.find((category) => category.code === "STD");
@@ -63,6 +65,26 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
   const [suggestedAreaId, setSuggestedAreaId] = useState<string | null>(null);
   const [standardFallbackAvailable, setStandardFallbackAvailable] = useState(false);
   const [standardFallbackConfirmed, setStandardFallbackConfirmed] = useState(false);
+
+  const normalizedPlate = normalizeLicensePlate(plate);
+  const plateIsComplete = isValidLicensePlate(plate);
+  const activePlateSession = !loadingSessions && plateIsComplete
+    ? sessions.find((session) =>
+      session.facilityId === facilityId &&
+      session.status === "active" &&
+      normalizeLicensePlate(session.licensePlate) === normalizedPlate
+    )
+    : undefined;
+  const plateSuggestions = !loadingSessions && step === "plate" && normalizedPlate.length > 0 && !activePlateSession
+    ? sessions
+      .filter((session) =>
+        session.facilityId === facilityId &&
+        session.status === "active" &&
+        normalizeLicensePlate(session.licensePlate).startsWith(normalizedPlate)
+      )
+      .slice(0, 5)
+    : [];
+  const suggestionsVisible = !suggestionsDismissed && plateSuggestions.length > 0;
 
   useEffect(() => {
     if (!businessUnits.some((unit) => unit.id === selectedUnit)) {
@@ -111,7 +133,44 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
   const currentArea = areas.find((area) => area.id === selectedArea);
   const selectedCategoryCode = getCategoryCode(selectedCategory);
 
+  const getSessionDisplayContext = (session: ParkingSession) => {
+    const unitName = businessUnits.find((unit) => unit.id === session.businessUnitId)?.name || "Unidad no disponible";
+    const categoryName = spaceCategories.find((category) => category.id === session.spaceCategoryId)?.name || "Tipo de espacio no disponible";
+    const areaName = areas.find((area) => area.id === session.parkingAreaId)?.name || "Sector flotante";
+    return `${unitName} · ${categoryName} · ${areaName}`;
+  };
+
+  const selectPlateSuggestion = (session: ParkingSession) => {
+    setPlate(formatLicensePlateInput(session.licensePlate));
+    setSuggestionsDismissed(true);
+    setActiveSuggestionIndex(-1);
+    setMessage(null);
+    setLastTicket(null);
+  };
+
+  const handlePlateKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape" && suggestionsVisible) {
+      event.preventDefault();
+      setSuggestionsDismissed(true);
+      setActiveSuggestionIndex(-1);
+      return;
+    }
+    if (!suggestionsVisible || plateSuggestions.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSuggestionIndex((current) => current < 0 || current >= plateSuggestions.length - 1 ? 0 : current + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSuggestionIndex((current) => current <= 0 ? plateSuggestions.length - 1 : current - 1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (activeSuggestionIndex >= 0) selectPlateSuggestion(plateSuggestions[activeSuggestionIndex]);
+    }
+  };
+
   const refreshSessions = useCallback(async () => {
+    setLoadingSessions(true);
     if (!navigator.onLine) {
       setSessions(await getActiveSessions(facilityId));
       setListError(null);
@@ -308,45 +367,6 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     }
   };
 
-  const handleManualExit = async () => {
-    if (!validatePlate(plate)) return;
-
-    setLoading(true);
-    setMessage(null);
-    try {
-    const now = new Date().toISOString();
-    const cleanPlate = normalizeLicensePlate(plate);
-
-    if (navigator.onLine) {
-      try {
-        const response = await apiFetch("/api/parking-sessions/exit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ facilityId, licensePlate: cleanPlate, exitTime: now, deviceId }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          setMessage({ text: data.error || "No se pudo registrar la salida", type: "error" });
-          return;
-        }
-        await saveLocalSession(data.session);
-      } catch {
-        await completeOfflineExit(cleanPlate, now);
-      }
-    } else {
-      await completeOfflineExit(cleanPlate, now);
-    }
-
-    setPlate("");
-    setStep("plate");
-    await completeOperation("Salida registrada correctamente.");
-    } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : "No se pudo registrar la salida", type: "error" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const completeOfflineExit = async (cleanPlate: string, now: string, selectedSession?: ParkingSession) => {
     const currentSession = selectedSession || await getLocalSessionByPlate(cleanPlate, facilityId);
     if (!currentSession) {
@@ -372,7 +392,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     });
   };
 
-  const handleQuickExit = async (session: ParkingSession) => {
+  const handleQuickExit = async (session: ParkingSession, clearPlateAfterSuccess = false) => {
     setWorkingSessionId(session.id);
     setMessage(null);
     setLastTicket(null);
@@ -409,6 +429,11 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
       }
     }
 
+    if (clearPlateAfterSuccess) {
+      setPlate("");
+      setSuggestionsDismissed(false);
+      setActiveSuggestionIndex(-1);
+    }
     await completeOperation(`Salida registrada para ${formatLicensePlate(session.licensePlate)}.`);
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : "No se pudo registrar la salida", type: "error" });
@@ -483,31 +508,21 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
 
   const handlePlateSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (loadingSessions || activePlateSession) return;
     if (!validatePlate(plate)) return;
     setMessage(null);
     setLastTicket(null);
-    setPlate(normalizeLicensePlate(plate));
-    setStep("movement");
-  };
-
-  const handleMovementSelection = (movement: "entry" | "exit") => {
-    setMessage(null);
-    setLastTicket(null);
-    if (movement === "entry") {
-      setStep("entry-details");
-      return;
-    }
-    void handleManualExit();
+    setSuggestionsDismissed(true);
+    setActiveSuggestionIndex(-1);
+    setPlate(formatLicensePlateInput(plate));
+    setStep("entry-details");
   };
 
   const returnToPlate = () => {
     setMessage(null);
     setStep("plate");
-  };
-
-  const returnToMovement = () => {
-    setMessage(null);
-    setStep("movement");
+    setSuggestionsDismissed(false);
+    setActiveSuggestionIndex(-1);
   };
 
   return (
@@ -517,52 +532,86 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
           <div>
             <span className="gate-eyebrow">OPERACIÓN DE GARITA</span>
             <h2 id="gate-operation-title">Registro de vehículos</h2>
-            <p>{step === "plate" ? "Ingresa la patente para comenzar." : step === "movement" ? "Selecciona el movimiento del vehículo." : "Revisa los datos antes de confirmar la entrada."}</p>
+            <p>{step === "plate" ? "Ingresa la patente; el sistema indicará el movimiento disponible." : "Revisa los datos antes de confirmar la entrada."}</p>
           </div>
           <span className="gate-step-indicator" role="status" aria-live="polite">
-            {step === "plate" ? "Paso 1 de 3 · Patente" : step === "movement" ? "Paso 2 de 3 · Movimiento" : "Paso 3 de 3 · Confirmación"}
+            {step === "plate" ? "Paso 1 de 2 · Patente y movimiento" : "Paso 2 de 2 · Confirmación de entrada"}
           </span>
         </div>
 
         {step === "plate" && <form onSubmit={handlePlateSubmit} noValidate>
           <div className="form-group">
             <label className="form-label" htmlFor="gate-license-plate">Patente</label>
-            <input
-              id="gate-license-plate"
-              type="text"
-              className="form-input plate-input"
-              placeholder="AA-1A-11"
-              aria-describedby="gate-plate-hint"
-              autoComplete="off"
-              autoCapitalize="characters"
-              inputMode="text"
-              maxLength={8}
-              value={plate}
-              onChange={(event) => setPlate(formatLicensePlateInput(event.target.value))}
-              required
-              autoFocus
-            />
+            <div className="gate-plate-search">
+              <input
+                id="gate-license-plate"
+                type="text"
+                role="combobox"
+                className="form-input plate-input"
+                placeholder="AA-1A-11"
+                aria-describedby="gate-plate-hint"
+                aria-autocomplete="list"
+                aria-expanded={suggestionsVisible}
+                aria-controls={suggestionsVisible ? "gate-active-plate-options" : undefined}
+                aria-activedescendant={suggestionsVisible && activeSuggestionIndex >= 0 ? `gate-active-plate-option-${activeSuggestionIndex}` : undefined}
+                autoComplete="off"
+                autoCapitalize="characters"
+                inputMode="text"
+                maxLength={8}
+                value={plate}
+                onChange={(event) => {
+                  setPlate(formatLicensePlateInput(event.target.value));
+                  setActiveSuggestionIndex(-1);
+                  setSuggestionsDismissed(false);
+                  setMessage(null);
+                  setLastTicket(null);
+                }}
+                onKeyDown={handlePlateKeyDown}
+                required
+                autoFocus
+              />
+              {suggestionsVisible && <div id="gate-active-plate-options" className="gate-plate-suggestions" role="listbox" aria-label="Vehículos activos">
+                {plateSuggestions.map((session, index) => <div
+                  id={`gate-active-plate-option-${index}`}
+                  className={`gate-plate-suggestion${activeSuggestionIndex === index ? " is-active" : ""}`}
+                  key={session.id}
+                  role="option"
+                  aria-selected={activeSuggestionIndex === index}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectPlateSuggestion(session)}
+                >
+                  <strong className="gate-session-plate">{formatLicensePlate(session.licensePlate)}</strong>
+                  <span className="gate-session-context">{getSessionDisplayContext(session)}</span>
+                  <time className="gate-session-time" dateTime={session.entryTime}>Entrada {new Date(session.entryTime).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}</time>
+                </div>)}
+              </div>}
+            </div>
             <span id="gate-plate-hint" className="gate-input-hint">Seis letras o números · se agrupa automáticamente como XX-XX-XX</span>
           </div>
 
-          <button type="submit" className="btn btn-primary gate-submit" disabled={loading}>Registrar</button>
-        </form>}
+          {loadingSessions && normalizedPlate.length > 0 && <p className="gate-search-status" role="status">Consultando vehículos activos…</p>}
 
-        {step === "movement" && <div className="gate-step-content">
-          <div className="gate-plate-summary">
-            <span>Patente</span>
-            <strong>{formatLicensePlate(plate)}</strong>
-          </div>
-          <div className="gate-movement-actions" role="group" aria-label="Elige el movimiento">
-            <button type="button" className="btn btn-primary" onClick={() => handleMovementSelection("entry")} disabled={loading}>
-              <span aria-hidden="true">↙</span> Entrada
+          {activePlateSession && <div className="gate-active-match" aria-live="polite">
+            <div role="status">
+              <span className="gate-eyebrow">VEHÍCULO DENTRO DEL RECINTO</span>
+              <strong className="gate-session-plate">{formatLicensePlate(activePlateSession.licensePlate)}</strong>
+              <span className="gate-session-context">{getSessionDisplayContext(activePlateSession)}</span>
+              <time className="gate-session-time" dateTime={activePlateSession.entryTime}>Entrada {new Date(activePlateSession.entryTime).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}</time>
+            </div>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => void handleQuickExit(activePlateSession, true)}
+              disabled={workingSessionId === activePlateSession.id}
+            >
+              {workingSessionId === activePlateSession.id ? "Procesando…" : "Registrar salida"}
             </button>
-            <button type="button" className="btn btn-danger" onClick={() => handleMovementSelection("exit")} disabled={loading}>
-              <span aria-hidden="true">↗</span> {loading ? "Procesando…" : "Salida"}
-            </button>
-          </div>
-          <button type="button" className="btn btn-secondary gate-back-action" onClick={returnToPlate} disabled={loading}>Volver a corregir patente</button>
-        </div>}
+          </div>}
+
+          {plateIsComplete && !activePlateSession && !loadingSessions && message?.type !== "error" && <button type="submit" className="btn btn-primary gate-submit" disabled={loading}>
+            Registrar entrada
+          </button>}
+        </form>}
 
         {step === "entry-details" && <form onSubmit={handleEntry} noValidate>
           <div className="gate-plate-summary">
@@ -627,7 +676,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
           </div>}
 
           <div className="gate-step-actions">
-            <button type="button" className="btn btn-secondary" onClick={returnToMovement} disabled={loading}>Volver</button>
+            <button type="button" className="btn btn-secondary" onClick={returnToPlate} disabled={loading}>Volver</button>
             <button type="submit" className="btn btn-primary" disabled={loading}>
               {loading ? "Procesando…" : standardFallbackConfirmed ? "Confirmar entrada Estándar" : "Confirmar entrada"}
             </button>

@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe("VehicleGatePanel", () => {
-  it("starts with the plate action and keeps the active vehicle list", () => {
+  it("starts with the plate field and keeps the active vehicle list", () => {
     const markup = renderToStaticMarkup(
       <VehicleGatePanel
         facilityId="facility-1"
@@ -52,8 +52,8 @@ describe("VehicleGatePanel", () => {
     expect(operationCard).not.toContain("Salida");
     expect(operationCard).not.toMatch(/<select\b/);
     const operationButtons = [...operationCard!.matchAll(/<button\b[\s\S]*?<\/button>/g)];
-    expect(operationButtons).toHaveLength(1);
-    expect(operationButtons[0][0]).toContain("Registrar");
+    expect(operationButtons).toHaveLength(0);
+    expect(operationCard).not.toContain(">Registrar<");
     expect(markup).toContain("Vehículos activos");
   });
 
