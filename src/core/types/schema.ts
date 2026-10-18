@@ -15,7 +15,7 @@ export const CreateFacilityInputSchema = z.object({
   name: z.string().min(2, "El nombre de la instalación debe tener al menos 2 caracteres"),
   address: z.string().optional().default(""),
   totalCapacity: z.number().int().positive("La capacidad total debe ser mayor a 0"),
-});
+}).strict();
 export type CreateFacilityInput = z.infer<typeof CreateFacilityInputSchema>;
 
 export const UpdateFacilityInputSchema = z.object({
@@ -24,6 +24,11 @@ export const UpdateFacilityInputSchema = z.object({
   totalCapacity: z.number().int().positive().optional(),
 });
 export type UpdateFacilityInput = z.infer<typeof UpdateFacilityInputSchema>;
+
+export const DeactivateFacilityInputSchema = z.object({
+  isActive: z.literal(false),
+}).strict();
+export type DeactivateFacilityInput = z.infer<typeof DeactivateFacilityInputSchema>;
 
 // --- Parking Area ---
 export const ParkingAreaSchema = z.object({

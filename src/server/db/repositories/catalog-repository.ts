@@ -9,13 +9,14 @@ import type {
   SpaceCategory,
 } from "@core/types/schema";
 import { createDrizzleDatabase, requireD1 } from "../client";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { facilities } from "../schema";
 import type { AppD1Database, AppEnvironment } from "../../types/app-environment";
 import { createAuditStatement } from "./audit-repository";
 import {
   commitFacilityMutation,
   insertWhenFacilityVersionMatches,
+  PersistenceConflictError,
   updateWhenFacilityVersionMatches,
 } from "./write-transaction";
 import {
@@ -55,7 +56,8 @@ function resultRows<T>(result: unknown): T[] {
 }
 
 export async function listFacilities(bindings: Bindings, facilityId: string): Promise<Facility[]> {
-  const rows = await createDrizzleDatabase(bindings).select().from(facilities).where(eq(facilities.id, facilityId));
+  const rows = await createDrizzleDatabase(bindings).select().from(facilities)
+    .where(sql`${facilities.id} = ${facilityId} AND ${facilities.isActive} = 1`);
   return rows.map((row) => facilityFromRow({
     id: row.id,
     name: row.name,
@@ -69,7 +71,7 @@ export async function listFacilities(bindings: Bindings, facilityId: string): Pr
 
 function facilityCatalogStatements(database: AppD1Database, facilityId: string) {
   return [
-    database.prepare("SELECT id, name, address, total_capacity, version, created_at, updated_at FROM facilities WHERE id = ? LIMIT 1").bind(facilityId),
+    database.prepare("SELECT id, name, address, total_capacity, version, created_at, updated_at FROM facilities WHERE id = ? AND is_active = 1 LIMIT 1").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, allocated_slots FROM space_categories WHERE facility_id = ? ORDER BY code").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, priority_level, quota_type, default_quota, is_active, version FROM business_units WHERE facility_id = ? ORDER BY priority_level, name").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, description, allocated_capacity, business_unit_id, is_active, version, created_at, updated_at FROM parking_areas WHERE facility_id = ? ORDER BY name").bind(facilityId),
@@ -122,22 +124,23 @@ export async function createFacilityRecord(
 ): Promise<Facility> {
   const database = requireD1(bindings);
   const facility: Facility = input;
+  const auditId = crypto.randomUUID();
+  const auditDetails = JSON.stringify({ facility });
   const results = await database.batch([
     database.prepare(
-      "INSERT INTO facilities (id, name, address, total_capacity, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
-    ).bind(input.id, input.name, input.address, input.totalCapacity, input.createdAt, input.updatedAt),
-    createAuditStatement(database, {
-      userId: actor.userId,
-      facilityId: input.id,
-      action: "created",
-      entityType: "facility",
-      entityId: input.id,
-      details: { facility },
-      createdAt: input.createdAt,
-    }, 1),
+      "INSERT INTO facilities (id, name, address, total_capacity, version, created_at, updated_at) SELECT ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND role = 'admin' AND facility_id IS NULL)",
+    ).bind(input.id, input.name, input.address, input.totalCapacity, input.createdAt, input.updatedAt, actor.userId),
+    database.prepare(
+      "UPDATE users SET facility_id = ? WHERE id = ? AND role = 'admin' AND facility_id IS NULL AND EXISTS (SELECT 1 FROM facilities WHERE id = ? AND is_active = 1)",
+    ).bind(input.id, actor.userId, input.id),
+    database.prepare("DELETE FROM facilities WHERE id = ? AND changes() = 0").bind(input.id),
+    database.prepare(
+      "INSERT INTO audit_logs (id, user_id, facility_id, action, entity_type, entity_id, details_json, mutation_id, created_at) SELECT ?, ?, ?, 'created', 'facility', ?, ?, NULL, ? WHERE EXISTS (SELECT 1 FROM facilities WHERE id = ? AND is_active = 1) AND EXISTS (SELECT 1 FROM users WHERE id = ? AND facility_id = ?)",
+    ).bind(auditId, actor.userId, input.id, input.id, auditDetails, input.createdAt, input.id, actor.userId, input.id),
   ]);
-  if (results.length !== 2 || results.some((result) => rowChanges(result) !== 1)) {
-    throw new Error("No se pudo guardar la instalación y su auditoría");
+  const changes = results.map(rowChanges);
+  if (results.length !== 4 || changes[0] !== 1 || changes[1] !== 1 || changes[2] !== 0 || changes[3] !== 1) {
+    throw new PersistenceConflictError("La identidad ya tiene un recinto asignado o el alta se procesó en otra solicitud");
   }
   return facility;
 }
@@ -189,6 +192,48 @@ export async function updateFacilityRecord(
     ],
   });
   return updated;
+}
+
+export async function deactivateFacilityRecord(
+  bindings: Bindings,
+  input: { facilityId: string; expectedVersion: number; actor: Actor; updatedAt: string },
+): Promise<void> {
+  const database = requireD1(bindings);
+  const nextVersion = input.expectedVersion + 1;
+  await commitFacilityMutation(database, {
+    facilityId: input.facilityId,
+    expectedFacilityVersion: input.expectedVersion,
+    updatedAt: input.updatedAt,
+    preconditionSql: "NOT EXISTS (SELECT 1 FROM parking_sessions WHERE facility_id = ? AND status = 'active')",
+    preconditionValues: [input.facilityId],
+    statements: [
+      updateWhenFacilityVersionMatches(
+        database,
+        "facilities",
+        ["is_active = 0"],
+        [],
+        "id = ? AND version = ? AND is_active = 1",
+        [input.facilityId, nextVersion],
+        input.facilityId,
+        nextVersion,
+      ),
+      createAuditStatement(database, {
+        userId: input.actor.userId,
+        facilityId: input.facilityId,
+        action: "deactivated",
+        entityType: "facility",
+        entityId: input.facilityId,
+        details: { isActive: false },
+        createdAt: input.updatedAt,
+      }, nextVersion),
+    ],
+  });
+}
+
+export async function isFacilityActive(bindings: Bindings, facilityId: string): Promise<boolean> {
+  return Boolean(await requireD1(bindings).prepare(
+    "SELECT id FROM facilities WHERE id = ? AND is_active = 1 LIMIT 1",
+  ).bind(facilityId).first<{ id: string }>());
 }
 
 export async function createAreaRecord(

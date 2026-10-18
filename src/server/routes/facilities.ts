@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import {
   CreateFacilityInputSchema,
+  DeactivateFacilityInputSchema,
   UpdateFacilityInputSchema,
   CreateParkingAreaInputSchema,
   UpdateParkingAreaCapacityInputSchema,
@@ -36,13 +37,14 @@ import {
   updateBusinessUnit,
   deactivateBusinessUnit,
 } from "@core/rules/businessUnitRules";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, signJwt } from "../middleware/auth";
 import type { AppEnvironment } from "../types/app-environment";
 import {
   createAreaRecord,
   createBusinessUnitRecord,
   createEventRecord,
   createFacilityRecord,
+  deactivateFacilityRecord,
   listFacilities,
   loadFacilityCatalogs,
   loadFacilitySnapshot,
@@ -107,13 +109,42 @@ facilityRoutes.post("/", async (c) => {
   const body = await c.req.json();
   const parsed = CreateFacilityInputSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "Datos de instalación inválidos", details: parsed.error.format() }, 400);
+  const user = c.get("user");
+  if (!user || user.facilityId) return c.json({ error: "La cuenta ya tiene un recinto asignado; edítalo desde Configuración" }, 409);
   const now = new Date().toISOString();
-  const facility = { ...parsed.data, id: typeof body.id === "string" && body.id ? body.id : crypto.randomUUID(), createdAt: now, updatedAt: now };
+  const facility = { ...parsed.data, id: crypto.randomUUID(), createdAt: now, updatedAt: now };
   try {
+    const secret = c.env.JWT_SECRET;
+    if (!secret) return c.json({ error: "Error interno del servidor", status: 500 }, 500);
+    const token = await signJwt({ userId: user.userId, username: user.username, role: user.role, facilityId: facility.id }, secret, 86400);
     await createFacilityRecord(c.env, facility, actor(c));
-    return c.json({ facility }, 201);
+    return c.json({ facility, token }, 201);
   } catch (error) {
     const failure = mutationFailure(error, "No se pudo crear la instalación", c);
+    return c.json(failure, failure.status);
+  }
+});
+
+// PATCH /api/facilities/:id/status
+facilityRoutes.patch("/:id/status", async (c) => {
+  const facilityId = c.req.param("id")!;
+  const parsed = DeactivateFacilityInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Datos de desactivación inválidos", details: parsed.error.format() }, 400);
+  try {
+    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
+    if (snapshot.activeSessions.length > 0) {
+      return c.json({ error: `No se puede eliminar el recinto mientras haya ${snapshot.activeSessions.length} vehículo(s) activo(s)` }, 409);
+    }
+    await deactivateFacilityRecord(c.env, {
+      facilityId,
+      expectedVersion: snapshot.facilityVersion,
+      actor: actor(c),
+      updatedAt: new Date().toISOString(),
+    });
+    return c.json({ facilityId, status: "inactive" }, 200);
+  } catch (error) {
+    const failure = mutationOrRuleFailure(c, error, "No se pudo eliminar el recinto");
     return c.json(failure, failure.status);
   }
 });

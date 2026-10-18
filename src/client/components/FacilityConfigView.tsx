@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import type { Facility, BusinessUnit, EventBooking, ParkingArea } from "@core/types/schema";
+import { FacilitySchema, type Facility, type BusinessUnit, type EventBooking, type ParkingArea } from "@core/types/schema";
 import { calculateFacilityBuffer } from "@core/rules/areaAllocationRules";
 import { BusinessUnitManager } from "./BusinessUnitManager";
 import { EventBookingsManager } from "./EventBookingsManager";
@@ -10,6 +10,8 @@ interface FacilityConfigViewProps {
   businessUnits: BusinessUnit[];
   events: EventBooking[];
   onRefresh?: () => void;
+  onFacilityCreated?: (facility: Facility, token: string) => void;
+  onFacilityDeactivated?: () => void;
 }
 
 interface ManagedParkingArea extends ParkingArea {
@@ -176,12 +178,17 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   businessUnits,
   events,
   onRefresh,
+  onFacilityCreated,
+  onFacilityDeactivated,
 }) => {
   // Facility parameters editing state
   const [facilityName, setFacilityName] = useState(facility?.name || "");
   const [facilityAddress, setFacilityAddress] = useState(facility?.address || "");
   const [totalCapacity, setTotalCapacity] = useState(facility?.totalCapacity || 100);
   const [savingFacility, setSavingFacility] = useState(false);
+  const [creatingFacility, setCreatingFacility] = useState(false);
+  const [pendingFacilityDeletion, setPendingFacilityDeletion] = useState(false);
+  const [deactivatingFacility, setDeactivatingFacility] = useState(false);
 
   // Areas state
   const [areas, setAreas] = useState<ManagedParkingArea[]>([]);
@@ -236,6 +243,54 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
   const floatingBuffer = calculateFacilityBuffer(currentTotal, areas);
   const activeAreas = areas.filter((area) => area.isActive);
   const inactiveAreas = areas.filter((area) => !area.isActive);
+
+  const handleCreateFacility = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setCreatingFacility(true);
+    setFeedback(null);
+    try {
+      const response = await apiFetch("/api/facilities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: facilityName.trim(), address: facilityAddress.trim(), totalCapacity: Number(totalCapacity) }),
+      });
+      const data = await response.json() as { facility?: unknown; token?: unknown; error?: string };
+      const parsedFacility = FacilitySchema.safeParse(data.facility);
+      if (!response.ok || !parsedFacility.success || typeof data.token !== "string") {
+        setFeedback({ text: data.error || "No se pudo crear el recinto", type: "error" });
+        return;
+      }
+      onFacilityCreated?.(parsedFacility.data, data.token);
+    } catch {
+      setFeedback({ text: "Error de red al crear el recinto", type: "error" });
+    } finally {
+      setCreatingFacility(false);
+    }
+  };
+
+  const confirmFacilityDeletion = async () => {
+    if (!facility) return;
+    setDeactivatingFacility(true);
+    setFeedback(null);
+    try {
+      const response = await apiFetch(`/api/facilities/${facility.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false }),
+      });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) {
+        setFeedback({ text: data.error || "No se pudo eliminar el recinto", type: "error" });
+        return;
+      }
+      onFacilityDeactivated?.();
+    } catch {
+      setFeedback({ text: "Error de red al eliminar el recinto", type: "error" });
+    } finally {
+      setDeactivatingFacility(false);
+      setPendingFacilityDeletion(false);
+    }
+  };
 
   // Handle saving facility base details
   const handleSaveFacility = async (e: React.FormEvent) => {
@@ -411,6 +466,46 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     }
   };
 
+  if (!facility) {
+    return (
+      <div className="facility-config-view">
+        {feedback && (
+          <div role="alert" style={{
+            padding: "1rem 1.5rem",
+            borderRadius: "10px",
+            backgroundColor: `var(${feedback.type === "success" ? "--color-success-surface" : "--color-danger-surface"})`,
+            border: `1px solid var(${feedback.type === "success" ? "--color-success" : "--color-danger"})`,
+            color: `var(${feedback.type === "success" ? "--color-success" : "--color-danger"})`,
+            fontWeight: 600,
+          }}>{feedback.text}</div>
+        )}
+        <section className="glass-panel config-panel">
+          <h2 style={{ fontSize: "1.4rem", marginBottom: "0.5rem" }}>Configura tu recinto</h2>
+          <p style={{ color: "var(--text-secondary)", marginBottom: "1.5rem" }}>
+            Registra el recinto principal para habilitar Garita, Dashboard y el resto de la configuración.
+          </p>
+          <form onSubmit={handleCreateFacility} className="config-facility-fields">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" htmlFor="new-facility-name">Nombre del recinto</label>
+              <input id="new-facility-name" className="form-input" value={facilityName} onChange={(event) => setFacilityName(event.target.value)} minLength={2} required />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" htmlFor="new-facility-address">Dirección</label>
+              <input id="new-facility-address" className="form-input" value={facilityAddress} onChange={(event) => setFacilityAddress(event.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" htmlFor="new-facility-capacity">Capacidad total</label>
+              <input id="new-facility-capacity" className="form-input" type="number" min={1} step={1} value={totalCapacity} onChange={(event) => setTotalCapacity(Number(event.target.value))} required />
+            </div>
+            <button type="submit" disabled={creatingFacility} className="btn btn-primary" style={{ padding: "0.75rem 1.5rem", whiteSpace: "nowrap" }}>
+              {creatingFacility ? "Creando recinto..." : "Crear recinto"}
+            </button>
+          </form>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="facility-config-view">
       {/* Global Feedback Banner */}
@@ -440,6 +535,23 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
               <button type="button" className="btn btn-secondary" onClick={() => setPendingAreaDeletion(null)} disabled={deactivatingAreaId !== null}>Cancelar</button>
               <button type="button" className="btn btn-primary" onClick={() => void confirmAreaDeletion()} disabled={deactivatingAreaId !== null}>
                 {deactivatingAreaId === pendingAreaDeletion.id ? "Eliminando..." : "Confirmar eliminación"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {pendingFacilityDeletion && (
+        <div className="dialog-overlay" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "grid", placeItems: "center", padding: "1rem", background: "var(--color-overlay)" }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="facility-delete-title" aria-describedby="facility-delete-description" className="glass-panel confirmation-dialog" style={{ width: "min(100%, 30rem)", padding: "1.75rem", border: "1px solid var(--color-danger)", boxShadow: "var(--shadow-lg)" }}>
+            <h3 id="facility-delete-title" style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.75rem" }}>Eliminar recinto</h3>
+            <p id="facility-delete-description" style={{ color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "1.25rem" }}>
+              ¿Eliminar <strong>{facility.name}</strong>? El recinto se desactivará y conservará sus registros históricos. Primero debes registrar la salida de todos los vehículos activos.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setPendingFacilityDeletion(false)} disabled={deactivatingFacility}>Cancelar</button>
+              <button type="button" className="btn btn-primary" onClick={() => void confirmFacilityDeletion()} disabled={deactivatingFacility}>
+                {deactivatingFacility ? "Eliminando..." : "Confirmar eliminación"}
               </button>
             </div>
           </section>
@@ -503,8 +615,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
 
         <form onSubmit={handleSaveFacility} className="config-facility-fields">
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Nombre del Recinto / Complejo</label>
-            <input
+              <label className="form-label" htmlFor="facility-name">Nombre del Recinto / Complejo</label>
+              <input
+                id="facility-name"
               type="text"
               className="form-input"
               value={facilityName}
@@ -515,8 +628,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Ubicación / Dirección</label>
-            <input
+              <label className="form-label" htmlFor="facility-address">Ubicación / Dirección</label>
+              <input
+                id="facility-address"
               type="text"
               className="form-input"
               value={facilityAddress}
@@ -526,8 +640,9 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Capacidad Total de Plazas</label>
-            <input
+              <label className="form-label" htmlFor="facility-capacity">Capacidad Total de Plazas</label>
+              <input
+                id="facility-capacity"
               type="number"
               className="form-input"
               min={Math.max(1, allocatedSum)}
@@ -537,14 +652,19 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={savingFacility}
-            className="btn btn-primary"
-            style={{ padding: "0.75rem 1.5rem", whiteSpace: "nowrap" }}
-          >
-            {savingFacility ? "Guardando..." : "Guardar Parámetros"}
-          </button>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <button
+              type="submit"
+              disabled={savingFacility}
+              className="btn btn-primary"
+              style={{ padding: "0.75rem 1.5rem", whiteSpace: "nowrap" }}
+            >
+              {savingFacility ? "Guardando..." : "Guardar Parámetros"}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => setPendingFacilityDeletion(true)} disabled={deactivatingFacility} aria-label="Eliminar recinto">
+              Eliminar recinto
+            </button>
+          </div>
         </form>
       </div>
 

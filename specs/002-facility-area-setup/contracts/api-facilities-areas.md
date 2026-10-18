@@ -11,6 +11,8 @@
 ### `POST /api/facilities`
 Crea una nueva instalación física de estacionamiento.
 - **Rol Requerido**: `admin`
+- Se permite para una sesión sin `facilityId` únicamente como bootstrap inicial.
+- El servidor debe asignar el recinto a la identidad autenticada dentro de la misma operación persistente y devolver un JWT actualizado, sin exigir un segundo inicio de sesión.
 - **Request Body**:
   ```json
   {
@@ -22,6 +24,7 @@ Crea una nueva instalación física de estacionamiento.
 - **Response 201 Created**:
   ```json
   {
+    "token": "jwt-actualizado-con-facilityId",
     "facility": {
       "id": "fac-uuid-1",
       "name": "Centro de Convenciones & Hotel Grand Pacific",
@@ -33,6 +36,7 @@ Crea una nueva instalación física de estacionamiento.
   }
   ```
 - **Response 400 Bad Request**: Validación Zod fallida.
+- **Response 409 Conflict**: La identidad ya tiene un recinto asignado o una solicitud concurrente completó el bootstrap.
 
 ### `PUT /api/facilities/:facilityId`
 Actualiza datos de la instalación (ej. cambiar capacidad total).
@@ -47,6 +51,15 @@ Actualiza datos de la instalación (ej. cambiar capacidad total).
   ```
 - **Response 200 OK**: Objeto `facility` actualizado.
 - **Response 409 Conflict**: Si la nueva capacidad total es menor que la suma de plazas ya asignadas a áreas.
+
+### `PATCH /api/facilities/:facilityId/status`
+Desactiva lógicamente el recinto y conserva sus datos, auditoría y referencias históricas.
+- **Rol Requerido**: `admin` asignado al recinto.
+- **Request Body**: `{ "isActive": false }`.
+- **Response 200 OK**: `{ "facilityId": "fac-uuid-1", "status": "inactive" }`.
+- **Response 404 Not Found**: Recinto inexistente o ya desactivado.
+- **Response 409 Conflict**: Hay vehículos activos o existe una colisión de concurrencia.
+- Las rutas posteriores de datos del recinto desactivado deben responder sin exponer sus datos operativos; las sesiones activas de tokens antiguos no podrán listar sesiones ni realizar mutaciones.
 
 ---
 

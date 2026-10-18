@@ -12,7 +12,8 @@ import {
 import { MissingD1BindingError } from "../../src/server/db/client";
 import { mutationFailure, readFailure } from "../../src/server/routes/http-errors";
 import { PersistenceConflictError } from "../../src/server/db/repositories/write-transaction";
-import { loadFacilitySnapshot } from "../../src/server/db/repositories/catalog-repository";
+import { createFacilityRecord, loadFacilitySnapshot } from "../../src/server/db/repositories/catalog-repository";
+import { ensureLocalIdentity } from "../../src/server/db/repositories/user-repository";
 import type { AppD1Database, AppEnvironment } from "../../src/server/types/app-environment";
 import { signJwt } from "../../src/server/middleware/auth";
 
@@ -102,15 +103,17 @@ describe("D1 persistence foundation", () => {
 
   it("returns an explicit error and leaves no domain row when an audit write fails", async () => {
     const database = getD1Database();
+    const initial = await database.prepare("SELECT name FROM facilities WHERE id = 'fac-default-01'").first<{ name: string }>();
+    expect(initial?.name).toBeTruthy();
     await database.exec("CREATE TRIGGER fail_test_audit BEFORE INSERT ON audit_logs BEGIN SELECT RAISE(ABORT, 'test audit failure'); END");
     try {
-      const response = await workerFetch("/api/facilities", {
-        method: "POST",
+      const response = await workerFetch("/api/facilities/fac-default-01", {
+        method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: adminAuthorization },
-        body: JSON.stringify({ name: "Audit rollback fixture", totalCapacity: 30, address: "" }),
+        body: JSON.stringify({ name: "Audit rollback fixture", address: "" }),
       });
       expect(response.status).toBeGreaterThanOrEqual(500);
-      expect(await countRows(database, "SELECT COUNT(*) AS count FROM facilities WHERE name = ?", "Audit rollback fixture")).toBe(0);
+      expect((await database.prepare("SELECT name FROM facilities WHERE id = 'fac-default-01'").first<{ name: string }>())?.name).toBe(initial?.name);
       expect(await countRows(database, "SELECT COUNT(*) AS count FROM audit_logs WHERE entity_type = ?", "facility")).toBe(0);
     } finally {
       await database.exec("DROP TRIGGER IF EXISTS fail_test_audit");
@@ -123,8 +126,8 @@ describe("D1 persistence foundation", () => {
     const changed = Reflect.set(bindings, "PARKING_DB", undefined);
     expect(changed).toBe(true);
     try {
-      const response = await workerFetch("/api/facilities", {
-        method: "POST",
+      const response = await workerFetch("/api/facilities/fac-default-01", {
+        method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: adminAuthorization },
         body: JSON.stringify({ name: "No binding fixture", totalCapacity: 4 }),
       });
@@ -150,5 +153,34 @@ describe("D1 persistence foundation", () => {
       batch: async () => [],
     } as unknown as AppD1Database;
     await expect(loadFacilitySnapshot({ PARKING_DB: emptyDatabase } as AppEnvironment["Bindings"], "missing")).resolves.toBeNull();
+  });
+
+  it("fails closed when an initial facility batch returns no change metadata", async () => {
+    const emptyDatabase = {
+      prepare: () => ({ bind: () => ({}) }),
+      batch: async () => [undefined, undefined, undefined, undefined],
+    } as unknown as AppD1Database;
+    const now = new Date().toISOString();
+    await expect(createFacilityRecord({ PARKING_DB: emptyDatabase } as AppEnvironment["Bindings"], {
+      id: "missing-batch-result",
+      name: "Uncommitted venue",
+      address: "",
+      totalCapacity: 20,
+      createdAt: now,
+      updatedAt: now,
+    }, { userId: "missing-admin" })).rejects.toBeInstanceOf(PersistenceConflictError);
+  });
+
+  it("leaves a newly logged in admin unassigned when no active facility or D1 user row exists", async () => {
+    const statement = { bind() { return statement; }, first: async () => null };
+    const emptyDatabase = {
+      prepare: () => statement,
+      batch: async () => [],
+    } as unknown as AppD1Database;
+    await expect(ensureLocalIdentity({ PARKING_DB: emptyDatabase } as AppEnvironment["Bindings"], {
+      username: "unassigned-admin",
+      fullName: "Unassigned admin",
+      role: "admin",
+    })).rejects.toThrow("No se pudo crear la identidad local en D1");
   });
 });

@@ -141,7 +141,8 @@ export function apiSecurityMiddleware() {
     let rejection: Response | undefined;
     const authResult = await authMiddleware()(c, async () => {
       const user = c.get("user");
-      if (!user.facilityId) {
+      const facilityBootstrap = path === "/api/facilities" && c.req.method === "POST" && user.role === "admin" && !user.facilityId;
+      if (!user.facilityId && !facilityBootstrap) {
         rejection = c.json({ error: "La sesión no tiene un recinto asignado" }, 403);
         return;
       }

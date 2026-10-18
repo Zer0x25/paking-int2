@@ -15,11 +15,13 @@ export const facilities = sqliteTable("facilities", {
   name: text("name").notNull(),
   address: text("address").notNull().default(""),
   totalCapacity: integer("total_capacity").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   version: integer("version").notNull().default(1),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [
   check("facilities_capacity_positive", sql`${table.totalCapacity} > 0`),
+  check("facilities_active_boolean", sql`${table.isActive} IN (0, 1)`),
   check("facilities_version_positive", sql`${table.version} > 0`),
 ]);
 

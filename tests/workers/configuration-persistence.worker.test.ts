@@ -21,11 +21,11 @@ function base64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-async function adminToken(facilityId: string): Promise<string> {
+async function adminToken(facilityId: string | null, userId = `admin-${crypto.randomUUID()}`): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = base64Url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
   const payload = base64Url(new TextEncoder().encode(JSON.stringify({
-    userId: `admin-${crypto.randomUUID()}`,
+    userId,
     username: "worker-test-admin",
     role: "admin",
     facilityId,
@@ -38,14 +38,23 @@ async function adminToken(facilityId: string): Promise<string> {
   return `${unsigned}.${base64Url(signature)}`;
 }
 
-async function createFacility(token: string, totalCapacity = 100): Promise<{ id: string }> {
-  const response = await workerFetch("/api/facilities", {
-    method: "POST",
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ name: `Persisted facility ${crypto.randomUUID()}`, totalCapacity, address: "Test address" }),
-  });
-  expect(response.status).toBe(201);
-  return (await response.json() as { facility: { id: string } }).facility;
+async function createFacility(totalCapacity = 100): Promise<{ id: string }> {
+  const database = getD1Database();
+  const id = `fixture-${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  await database.prepare(
+    "INSERT INTO facilities (id, name, address, total_capacity, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+  ).bind(id, `Persisted facility ${id}`, "Test address", totalCapacity, now, now).run();
+  return { id };
+}
+
+async function createUnassignedAdmin(): Promise<{ userId: string; token: string }> {
+  const database = getD1Database();
+  const userId = `bootstrap-admin-${crypto.randomUUID()}`;
+  await database.prepare(
+    "INSERT INTO users (id, username, full_name, role, facility_id, created_at) VALUES (?, ?, ?, 'admin', NULL, ?)",
+  ).bind(userId, userId, "Bootstrap administrator", new Date().toISOString()).run();
+  return { userId, token: await adminToken(null, userId) };
 }
 
 async function insertCategory(facilityId: string): Promise<string> {
@@ -64,15 +73,17 @@ describe("Configuration persistence through the Worker API", () => {
   });
 
   it("persists facility, area, unit, event, status, and catalog reads across new requests", async () => {
-    const creationToken = await adminToken("fac-default-01");
+    const { token: creationToken } = await createUnassignedAdmin();
     const facilityResponse = await workerFetch("/api/facilities", {
       method: "POST",
       headers: jsonHeaders(creationToken),
       body: JSON.stringify({ name: "Persisted venue", totalCapacity: 100, address: "North entrance" }),
     });
     expect(facilityResponse.status).toBe(201);
-    const { facility } = await facilityResponse.json() as { facility: { id: string; name: string } };
-    const token = await adminToken(facility.id);
+    const { facility, token } = await facilityResponse.json() as { facility: { id: string; name: string }; token: string };
+    expect(token).toBeTruthy();
+    expect(await getD1Database().prepare("SELECT facility_id FROM users WHERE facility_id = ?")
+      .bind(facility.id).first<{ facility_id: string }>()).toMatchObject({ facility_id: facility.id });
     const listedFacilities = await workerFetch("/api/facilities", { headers: jsonHeaders(token) });
     expect((await listedFacilities.json() as { facilities: { id: string }[] }).facilities.map(({ id }) => id)).toContain(facility.id);
 
@@ -175,9 +186,95 @@ describe("Configuration persistence through the Worker API", () => {
     expect(categoriesTwo.map(({ code }) => code)).toContain("STD");
   });
 
+  it("bootstraps an unassigned administrator and logically deactivates the recinto only when empty", async () => {
+    const { userId, token: initialToken } = await createUnassignedAdmin();
+    const creation = await workerFetch("/api/facilities", {
+      method: "POST",
+      headers: jsonHeaders(initialToken),
+      body: JSON.stringify({ name: "Bootstrap venue", address: "Test street", totalCapacity: 20 }),
+    });
+    expect(creation.status).toBe(201);
+    const { facility, token } = await creation.json() as { facility: { id: string }; token: string };
+    expect(token).toBeTruthy();
+    expect(await getD1Database().prepare("SELECT facility_id FROM users WHERE id = ?")
+      .bind(userId).first<{ facility_id: string }>()).toEqual({ facility_id: facility.id });
+    expect((await workerFetch(`/api/facilities/${facility.id}/catalogs`, { headers: jsonHeaders(token) })).status).toBe(200);
+
+    const categoryId = await insertCategory(facility.id);
+    const unitResponse = await workerFetch(`/api/facilities/${facility.id}/business-units`, {
+      method: "POST",
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ name: "Test unit", code: "BOOT", quotaType: "dynamic", defaultQuota: 0 }),
+    });
+    expect(unitResponse.status).toBe(201);
+    const { businessUnit } = await unitResponse.json() as { businessUnit: { id: string } };
+    const areaResponse = await workerFetch(`/api/facilities/${facility.id}/areas`, {
+      method: "POST",
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ name: "Test area", code: "BOOT-A", allocatedCapacity: 5, businessUnitId: businessUnit.id }),
+    });
+    expect(areaResponse.status).toBe(201);
+    const { area } = await areaResponse.json() as { area: { id: string } };
+    const entry = await workerFetch("/api/parking-sessions/entry", {
+      method: "POST",
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ facilityId: facility.id, businessUnitId: businessUnit.id, spaceCategoryId: categoryId, parkingAreaId: area.id, licensePlate: "ZX1Y23", entryTime: "2026-10-18T12:00:00.000Z" }),
+    });
+    expect(entry.status).toBe(201);
+
+    const occupiedDeactivation = await workerFetch(`/api/facilities/${facility.id}/status`, {
+      method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ isActive: false }),
+    });
+    expect(occupiedDeactivation.status).toBe(409);
+
+    const exit = await workerFetch("/api/parking-sessions/exit", {
+      method: "POST",
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ facilityId: facility.id, licensePlate: "ZX1Y23", exitTime: "2026-10-18T13:00:00.000Z" }),
+    });
+    expect(exit.status).toBe(200);
+    const deactivation = await workerFetch(`/api/facilities/${facility.id}/status`, {
+      method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ isActive: false }),
+    });
+    expect(deactivation.status).toBe(200);
+    expect(await getD1Database().prepare("SELECT is_active FROM facilities WHERE id = ?")
+      .bind(facility.id).first<{ is_active: number }>()).toEqual({ is_active: 0 });
+    expect((await workerFetch(`/api/facilities/${facility.id}/catalogs`, { headers: jsonHeaders(token) })).status).toBe(404);
+    expect((await workerFetch(`/api/facilities/${facility.id}/dashboard`, { headers: jsonHeaders(token) })).status).toBe(404);
+    const realtime = await workerFetch(`/api/events/${facility.id}`, {
+      headers: {
+        Upgrade: "websocket",
+        "Sec-WebSocket-Protocol": `parking-events-v1, ${token}, client-1`,
+      },
+    });
+    expect(realtime.status).toBe(404);
+    const activeSessions = await workerFetch(`/api/parking-sessions/active?facilityId=${facility.id}`, { headers: jsonHeaders(token) });
+    expect((await activeSessions.json() as { sessions: unknown[] }).sessions).toEqual([]);
+    const repeatDeactivation = await workerFetch(`/api/facilities/${facility.id}/status`, {
+      method: "PATCH",
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ isActive: false }),
+    });
+    expect(repeatDeactivation.status).toBe(404);
+    expect(await countRows(getD1Database(), "SELECT COUNT(*) AS count FROM audit_logs WHERE facility_id = ? AND entity_type = 'facility'", facility.id)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("allows only one concurrent initial facility bootstrap for the same identity", async () => {
+    const { userId, token } = await createUnassignedAdmin();
+    const responses = await Promise.all(["First venue", "Second venue"].map((name) => workerFetch("/api/facilities", {
+      method: "POST",
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ name, totalCapacity: 10 }),
+    })));
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const assigned = await getD1Database().prepare("SELECT facility_id FROM users WHERE id = ?")
+      .bind(userId).first<{ facility_id: string }>();
+    expect(assigned?.facility_id).toBeTruthy();
+    expect(await countRows(getD1Database(), "SELECT COUNT(*) AS count FROM facilities WHERE name IN ('First venue', 'Second venue')")).toBe(1);
+  });
+
   it("rejects duplicate codes, stale edits, capacity races, and audit-only partial commits", async () => {
-    const creationToken = await adminToken("fac-default-01");
-    const facility = await createFacility(creationToken, 100);
+    const facility = await createFacility(100);
     const token = await adminToken(facility.id);
     const areas = `/api/facilities/${facility.id}/areas`;
     const code = `D${crypto.randomUUID().slice(0, 5)}`;
@@ -209,7 +306,7 @@ describe("Configuration persistence through the Worker API", () => {
     });
     expect(duplicateAfterRetirement.status).toBe(409);
 
-    const raceFacility = await createFacility(creationToken, 100);
+    const raceFacility = await createFacility(100);
     const raceToken = await adminToken(raceFacility.id);
     const racePath = `/api/facilities/${raceFacility.id}/areas`;
     const raceResponses = await Promise.all(["Race one", "Race two"].map((name) => workerFetch(racePath, {
@@ -235,8 +332,7 @@ describe("Configuration persistence through the Worker API", () => {
   });
 
   it("validates configuration inputs, missing records, and active dependencies", async () => {
-    const setupToken = await adminToken("fac-default-01");
-    const facility = await createFacility(setupToken, 10);
+    const facility = await createFacility(10);
     const token = await adminToken(facility.id);
     const areas = `/api/facilities/${facility.id}/areas`;
     const units = `/api/facilities/${facility.id}/business-units`;
@@ -244,12 +340,13 @@ describe("Configuration persistence through the Worker API", () => {
     const unknownFacility = `missing-${crypto.randomUUID()}`;
     const requestedFacilityId = `requested-${crypto.randomUUID()}`;
 
+    const { token: bootstrapToken } = await createUnassignedAdmin();
     const requestedFacility = await workerFetch("/api/facilities", {
-      method: "POST", headers: jsonHeaders(token),
+      method: "POST", headers: jsonHeaders(bootstrapToken),
       body: JSON.stringify({ id: requestedFacilityId, name: "Requested identifier", totalCapacity: 2 }),
     });
-    expect(requestedFacility.status).toBe(201);
-    expect((await requestedFacility.json() as { facility: { id: string } }).facility.id).toBe(requestedFacilityId);
+    expect(requestedFacility.status).toBe(400);
+    expect(await countRows(getD1Database(), "SELECT COUNT(*) AS count FROM facilities WHERE id = ?", requestedFacilityId)).toBe(0);
     expect((await workerFetch(`/api/facilities/${facility.id}`, {
       method: "PUT", headers: jsonHeaders(token), body: JSON.stringify({ name: "Partially edited facility" }),
     })).status).toBe(200);
@@ -257,6 +354,9 @@ describe("Configuration persistence through the Worker API", () => {
     expect((await workerFetch("/api/facilities", {
       method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ name: "", totalCapacity: 0 }),
     })).status).toBe(400);
+    expect((await workerFetch("/api/facilities", {
+      method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ name: "Second recinto", totalCapacity: 20 }),
+    })).status).toBe(409);
     expect((await workerFetch(`/api/facilities/${unknownFacility}`, {
       method: "PUT", headers: jsonHeaders(token), body: JSON.stringify({ name: "Missing venue" }),
     })).status).toBe(403);

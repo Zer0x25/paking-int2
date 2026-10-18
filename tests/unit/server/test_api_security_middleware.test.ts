@@ -58,6 +58,11 @@ describe("default-deny authentication middleware", () => {
       headers: authHeaders(operator),
       body: JSON.stringify({ name: "Forbidden", totalCapacity: 1 }),
     })).status).toBe(403);
+    expect((await request("/api/facilities", {
+      method: "POST",
+      headers: authHeaders(noFacility),
+      body: JSON.stringify({ name: "Initial facility", totalCapacity: 1 }),
+    })).status).toBe(500);
     expect((await request("/api/facilities/facility-one/areas", {
       method: "POST",
       headers: authHeaders(operator),

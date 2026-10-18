@@ -17,6 +17,11 @@
 - Q: ¿Qué campos debe poder editar el administrador en un área existente? → A: Nombre, código, descripción, régimen de uso y capacidad desde un formulario.
 - Q: Si el rango de un evento termina el día 17, ¿hasta cuándo debe aparecer la reserva en la lista activa? → A: Debe permanecer visible hasta las 23:59 del día siguiente (día 18) y ocultarse al comenzar el día 19.
 
+### Cobertura de ciclo de vida del recinto (2026-10-18)
+- El administrador autenticado sin recinto asignado puede crear el recinto inicial desde una pantalla de configuración; la operación lo asigna al recinto y mantiene su sesión activa.
+- Editar modifica los datos del recinto existente. Eliminar significa desactivar lógicamente, conservar el historial y devolver al usuario al inicio de sesión; no se borran físicamente registros.
+- No se puede desactivar un recinto mientras tenga vehículos activos. Una vez desactivado, el recinto deja de aceptar lecturas y escrituras operativas.
+
 ---
 
 ## User Scenarios & Testing *(mandatory)*
@@ -33,6 +38,9 @@ Como administrador del sistema, necesito crear y parametrizar la instalación pr
 1. **Given** un administrador autenticado en la interfaz de configuración, **When** completa el formulario de creación de instalación con nombre ("Centro Grand Pacific"), dirección ("Av. Costanera 1000") y capacidad total (250 plazas) y confirma, **Then** el sistema valida que la capacidad sea un entero mayor a cero, persiste la instalación y la deja seleccionada como la instalación activa del sistema.
 2. **Given** una instalación ya existente, **When** el administrador actualiza el nombre o modifica la capacidad total del recinto, **Then** el sistema valida que la nueva capacidad total no sea inferior a la suma actual de plazas ya comprometidas por áreas activas o vehículos aparcados, guardando el cambio con registro de auditoría.
 3. **Given** el dispositivo del administrador pierde conexión a internet, **When** crea o actualiza los datos de la instalación, **Then** los cambios se almacenan en IndexedDB local de inmediato y se encolan para sincronización en cuanto regrese la conectividad.
+4. **Given** un administrador autenticado sin recinto asignado, **When** completa y confirma el formulario inicial, **Then** el recinto se persiste en D1, se asigna a su identidad y recibe una sesión actualizada sin tener que iniciar sesión otra vez.
+5. **Given** un recinto sin vehículos activos, **When** el administrador confirma eliminarlo, **Then** se desactiva lógicamente, conserva auditoría y registros históricos, deja de aparecer como recinto operativo y la interfaz vuelve al inicio de sesión.
+6. **Given** un recinto con vehículos activos, **When** el administrador intenta eliminarlo, **Then** la operación se rechaza con una explicación y el recinto permanece activo.
 
 ---
 
@@ -106,6 +114,9 @@ Como administrador, necesito crear cualquier cantidad de reservas contractuales 
 - **Reservas simultáneas**: Las reservas no pueden comprometer más cupos que la capacidad del recinto una vez sumadas las cuotas garantizadas vigentes en los mismos instantes.
 - **Eliminación de una reserva**: Eliminar equivale a cancelarla; se oculta inmediatamente de la lista activa y se conserva para referencia histórica.
 - **Vencimiento de una reserva**: Al finalizar el día calendario posterior a la fecha final, la reserva desaparece de la lista activa pero permanece almacenada.
+- **Primer recinto en D1 vacío**: La sesión de un administrador sin recinto debe permitir únicamente completar el alta inicial; dos solicitudes concurrentes no pueden dejar recintos sin asignar ni cambiar el recinto de la cuenta.
+- **Desactivación de recinto**: Si hay sesiones vehiculares activas, se bloquea la desactivación; si no las hay, se conserva la información histórica y las rutas de datos dejan de permitir operaciones sobre ese recinto.
+- **Sesión antigua tras desactivar**: Los tokens previos del recinto archivado no deben permitir consultar sesiones activas ni efectuar nuevas operaciones.
 
 ---
 
@@ -132,6 +143,9 @@ Como administrador, necesito crear cualquier cantidad de reservas contractuales 
 - **FR-017**: El sistema DEBE impedir que los compromisos simultáneos por cuotas garantizadas y reservas de eventos superen la capacidad física total de la instalación.
 - **FR-018**: Los cupos contractuales de un evento DEBEN influir en la disponibilidad operativa únicamente durante su intervalo programado de fecha y hora.
 - **FR-019**: Las creaciones, ediciones y cancelaciones de reservas DEBEN conservar el historial de cambios en el registro de auditoría.
+- **FR-020**: Un administrador autenticado sin recinto asignado DEBE poder crear el recinto inicial; el guardado debe asociarlo de forma atómica a su identidad y emitir una sesión válida para el recinto recién creado.
+- **FR-021**: El sistema DEBE permitir al administrador desactivar lógicamente un recinto tras confirmación explícita, conservar sus datos y auditoría, y bloquear la acción mientras existan sesiones vehiculares activas.
+- **FR-022**: Las rutas operativas y de lectura de un recinto desactivado DEBEN rechazar tokens antiguos y no exponer sus sesiones o catálogos como activos.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -140,6 +154,8 @@ Como administrador, necesito crear cualquier cantidad de reservas contractuales 
   - `name`: Nombre del complejo o centro de convenciones.
   - `address`: Dirección física.
   - `totalCapacity`: Número total de plazas de estacionamiento físicas.
+  - `isActive`: Estado operativo; la baja es lógica y conserva la identidad y datos asociados.
+  - `version`: Versión interna para evitar conflictos en operaciones concurrentes.
   - `createdAt`, `updatedAt`: Marcas de tiempo ISO 8601.
 
 - **ParkingArea (Área de Estacionamiento)**:
@@ -179,6 +195,8 @@ Como administrador, necesito crear cualquier cantidad de reservas contractuales 
 - **SC-006**: Un administrador puede completar la creación, edición o cancelación de una reserva desde Configuración en menos de 60 segundos.
 - **SC-007**: El 100% de las reservas cuya fecha final ya excedió el día calendario de gracia desaparece de la lista activa y conserva su registro histórico.
 - **SC-008**: El 100% de los intentos de comprometer cupos simultáneos por encima de la capacidad física se bloquea antes de guardar.
+- **SC-009**: Un administrador sin recinto asignado puede crear el recinto inicial y completar la configuración sin volver a iniciar sesión.
+- **SC-010**: El 100% de los intentos de desactivar un recinto con vehículos activos se bloquea; las sesiones antiguas de recintos desactivados no acceden a datos operativos.
 
 ---
 
@@ -187,6 +205,7 @@ Como administrador, necesito crear cualquier cantidad de reservas contractuales 
 - Cada área pertenece exactamente a una instalación.
 - La suma de capacidades de áreas no necesita ser exactamente igual al total; la diferencia representa plazas de reserva libre no sectorizadas.
 - La eliminación de áreas se realiza como baja lógica para conservar referencias históricas a sesiones y auditoría.
+- La eliminación de recintos se realiza como baja lógica; solo se permite cuando no quedan vehículos activos y los datos históricos se conservan.
 - No existe un límite artificial al número de reservas; la capacidad comprometida en los intervalos coincidentes es el límite efectivo.
 - La eliminación de reservas es una cancelación lógica para conservar auditoría e historia.
 - Las fechas se interpretan en la zona horaria local de la instalación; un rango terminado el día D se mantiene visible durante todo el día D+1 y se oculta al comenzar D+2.

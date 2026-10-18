@@ -45,7 +45,7 @@ function updateSessionStatement(
 
 export async function listActiveSessions(bindings: Bindings, facilityId: string): Promise<ParkingSession[]> {
   const result = await requireD1(bindings).prepare(
-    `SELECT ${sessionColumns()} FROM parking_sessions WHERE facility_id = ? AND status = 'active' ORDER BY entry_time DESC`,
+    `SELECT ${sessionColumns()} FROM parking_sessions WHERE facility_id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM facilities WHERE facilities.id = parking_sessions.facility_id AND facilities.is_active = 1) ORDER BY entry_time DESC`,
   ).bind(facilityId).all<ParkingSessionRow>();
   return result.results.map(parkingSessionFromRow);
 }

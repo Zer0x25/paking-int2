@@ -99,3 +99,17 @@
 - [x] T034 [US5] Use managed reservations in admission allocation and return the facility's event records through `GET /catalogs` in `src/server/services/allocation-service.ts` and `src/server/routes/facilities.ts`
 - [x] T035 [US5] Add event create/edit/cancel forms, date range display, and expiry filtering in `src/client/components/EventBookingsManager.tsx` and `src/client/utils/event-booking.ts`
 - [x] T036 [US5] Update event contracts, data model, quickstart, ADR, and PHR; verify create/edit/cancel/expiry behavior in a real browser
+
+## Phase 9: Facility Bootstrap and Lifecycle Convergence
+
+**Purpose**: Complete initial D1 onboarding, facility editing, logical deactivation, and post-deactivation access control.
+
+- [x] T037 [P] Add failing Worker tests for an unassigned admin bootstrap, identity assignment, stale bootstrap conflicts, facility deactivation guards, and archived-facility access in the Worker integration suite
+- [x] T038 Add failing client tests for first-run facility creation and confirmed facility deactivation in `tests/unit/client/test_app_login.test.tsx` and `tests/unit/client/test_facility_config_view.test.tsx`
+- [x] T039 Add the facility `is_active` D1 migration and Drizzle model; filter archived facilities from snapshots, lists, session queries, and realtime handshakes in `src/server/db/migrations/0002_facility_lifecycle.sql`, `src/server/db/schema.ts`, and repositories
+- [x] T040 Implement atomic initial facility creation plus user assignment and updated JWT; preserve existing facility edit and audit behavior in `src/server/db/repositories/catalog-repository.ts` and `src/server/routes/facilities.ts`
+- [x] T041 Allow only an unassigned administrator to bootstrap, add guarded logical deactivation with audit, active-session and version checks, and reject archived-facility access in `src/server/middleware/auth.ts`, `src/server/routes/facilities.ts`, and `src/server/routes/realtime.ts`
+- [x] T042 Add first-run setup, facility editing, confirmed logical deletion, and clean logout after deactivation in `src/client/App.tsx` and `src/client/components/FacilityConfigView.tsx`
+- [x] T043 Update contracts, data model, quickstart, ADR index, and PHR for the completed facility lifecycle
+- [x] T044 Run Worker and client acceptance tests, typecheck, lint, and coverage gates
+- [ ] T045 Verify first-run creation, edit, and confirmed deletion in a signed-in real browser against an isolated D1 database without changing persistent local demo data or remote staging

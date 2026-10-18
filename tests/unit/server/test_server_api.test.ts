@@ -16,11 +16,13 @@ describe("Worker API startup and fail-closed behavior", () => {
     const secret = "test-only-secret";
     const token = await signJwt({ userId: "admin-1", username: "admin", role: "admin", facilityId: "fac-1" }, secret);
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const unassignedToken = await signJwt({ userId: "admin-bootstrap", username: "admin", role: "admin" }, secret);
+    const bootstrapHeaders = { Authorization: `Bearer ${unassignedToken}`, "Content-Type": "application/json" };
     const environment = { JWT_SECRET: secret, PARKING_DB: undefined };
     const read = await app.request("/api/facilities", { headers }, environment);
     const create = await app.request("/api/facilities", {
       method: "POST",
-      headers,
+      headers: bootstrapHeaders,
       body: JSON.stringify({ name: "Local facility", totalCapacity: 20, address: "" }),
     }, environment);
     expect(read.status).toBe(500);

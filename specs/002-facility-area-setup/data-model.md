@@ -17,6 +17,8 @@ Representa la infraestructura física principal donde operan el estacionamiento 
 | `name` | `string` | Mínimo 2 caracteres | Nombre comercial del complejo |
 | `address` | `string` | Opcional | Dirección física del recinto |
 | `totalCapacity` | `number` (int) | Entero estrictamente positivo (> 0) | Cantidad total física de plazas de estacionamiento |
+| `isActive` | `boolean` | Por defecto `true`; baja lógica | Indica si se acepta operación en el recinto; desactivarlo conserva datos e historial |
+| `version` | `number` (int) | Por defecto 1, incremento en cada cambio | Control interno de concurrencia optimista |
 | `createdAt` | `string` (ISO 8601) | Obligatorio | Fecha de creación del registro |
 | `updatedAt` | `string` (ISO 8601) | Obligatorio | Fecha de última actualización |
 
@@ -64,6 +66,9 @@ Las fechas se interpretan en la zona horaria local de la instalación. Si `endTi
 ---
 
 ## 2. Invariantes del Dominio y Reglas de Negocio
+
+### Invariante 0: Alta Inicial y Baja Lógica del Recinto
+Un administrador sin recinto asignado puede crear el recinto inicial; su asociación y la creación del recinto deben persistirse atómicamente. Un recinto solo puede desactivarse sin sesiones vehiculares activas. Los registros asociados se conservan y las rutas operativas dejan de servir datos del recinto desactivado.
 
 ### Invariante 1: Regla de Capacidad Global y Buffer Flotante
 Para cualquier instalación $F$ con capacidad $C_{\text{total}}$ y conjunto de áreas activas $A$:

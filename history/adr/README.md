@@ -23,3 +23,6 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | [ADR-015](ADR-015-local-worker-restart.md) | Reinicio seguro del Worker local y puerto estable | Aceptado | 2026-10-17 |
 | [ADR-016](ADR-016-workers-static-assets.md) | Migrar de Workers Sites a Workers Static Assets | Aceptado | 2026-10-17 |
 | [ADR-017](ADR-017-authenticated-event-driven-refresh.md) | Rutas protegidas y refresco por eventos autenticados | Aceptado | 2026-10-17 |
+| [ADR-018](ADR-018-scoped-facility-invalidations.md) | Invalidador de cambios limitado al recinto autenticado | Aceptado | 2026-10-18 |
+| [ADR-019](ADR-019-cloudflare-release-environments.md) | Entornos de release Cloudflare local, staging y producción | Aceptado | 2026-10-18 |
+| [ADR-020](ADR-020-facility-bootstrap-and-logical-deactivation.md) | Bootstrap y baja lógica del recinto | Aceptado | 2026-10-18 |

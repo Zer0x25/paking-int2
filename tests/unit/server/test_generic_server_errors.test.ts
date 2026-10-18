@@ -43,7 +43,7 @@ describe("generic server error responses", () => {
 
   it("hides the internal failure from an authenticated write", async () => {
     const secret = "generic-error-test-secret";
-    const token = await signJwt({ userId: "admin-1", username: "admin", role: "admin", facilityId: "fac-1" }, secret);
+    const token = await signJwt({ userId: "admin-1", username: "admin", role: "admin" }, secret);
     const response = await app.request("/api/facilities", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

@@ -7,12 +7,13 @@
 
 ## 1. Escenario 1: Construcción de Instalación y Parámetros Base
 1. Iniciar sesión como Administrador (`admin` / credenciales configuradas).
-2. Navegar a la pestaña **"Configuración de Instalación"**.
-3. Registrar una nueva instalación:
+2. Si la cuenta no tiene recinto asignado, completar el formulario de inicio; si ya existe un recinto, abrir **"Configuración de Instalación"** para editarlo.
+3. Registrar o actualizar la instalación:
    - Nombre: "Complejo Convenciones & Resort"
    - Dirección: "Ruta 68 Km 15"
    - Capacidad Total: `120` plazas.
-4. Verificar que se muestra la tarjeta de la instalación con `120 plazas físicas` y `Buffer general: 120`.
+4. Verificar que se muestra la tarjeta de la instalación con `120 plazas físicas` y `Buffer general: 120`; en el alta inicial, confirmar que la sesión queda asignada sin volver a iniciar sesión.
+5. Para probar la baja lógica, vaciar primero las sesiones vehiculares, confirmar **Eliminar recinto** y verificar que se conserva el historial y se vuelve al inicio de sesión. Intentar la misma acción con un vehículo activo debe mostrar el bloqueo sin desactivar el recinto.
 
 ---
 

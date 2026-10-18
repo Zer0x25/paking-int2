@@ -222,6 +222,16 @@ export const App: React.FC = () => {
     if (user.facilityId) setFacility((current) => ({ ...current, id: user.facilityId || LOCAL_FACILITY_ID }));
   };
 
+  const handleFacilityCreated = (createdFacility: Facility, token: string) => {
+    if (!currentUser) return;
+    const assignedUser = { ...currentUser, facilityId: createdFacility.id };
+    localStorage.setItem("auth_token", token);
+    localStorage.setItem("auth_user", JSON.stringify(assignedUser));
+    setCurrentUser(assignedUser);
+    setFacility(createdFacility);
+    setActiveTab("garita");
+  };
+
   if (!currentUser) {
     return (
       <main className="main-content">
@@ -235,10 +245,12 @@ export const App: React.FC = () => {
       <header className="app-header">
         <div className="app-brand">
           <h1 className="brand-title">Smart Parking</h1>
-          <span className="app-facility-label" title={facility.name}>{facility.name}</span>
+          <span className="app-facility-label" title={currentUser.facilityId ? facility.name : "Configuración inicial"}>
+            {currentUser.facilityId ? facility.name : "Configura tu recinto"}
+          </span>
         </div>
 
-        <nav className="nav-tabs" aria-label="Navegación principal">
+        {currentUser.facilityId && <nav className="nav-tabs" aria-label="Navegación principal">
           <button
             onClick={() => setActiveTab("garita")}
             className={`nav-tab-btn ${activeTab === "garita" ? "active" : ""}`}
@@ -262,7 +274,7 @@ export const App: React.FC = () => {
               ⚙ Configuración
             </button>
           )}
-        </nav>
+        </nav>}
 
         <div className="app-header-actions">
           <div className="app-account">
@@ -273,14 +285,31 @@ export const App: React.FC = () => {
           </div>
           <div className="app-header-quick-controls">
             <ThemeSelector />
-            <SyncStatusBar facilityId={currentUser.facilityId || facility.id} onSyncCompleted={refreshAfterSync} />
+            {currentUser.facilityId && <SyncStatusBar facilityId={currentUser.facilityId} onSyncCompleted={refreshAfterSync} />}
           </div>
           <button onClick={clearPrivateViewState} className="btn btn-secondary">Salir</button>
         </div>
       </header>
 
       <main className="main-content" style={{ flex: 1 }}>
-        {visibleSections.includes("vehicle-entry") && visibleSections.includes("vehicle-exit") && (
+        {!currentUser.facilityId && currentUser.role === "admin" && (
+          <section>
+            <FacilityConfigView
+              facility={null}
+              businessUnits={[]}
+              events={[]}
+              onFacilityCreated={handleFacilityCreated}
+            />
+          </section>
+        )}
+
+        {!currentUser.facilityId && currentUser.role !== "admin" && (
+          <section className="glass-panel config-panel" role="alert">
+            El administrador debe crear y asignar el recinto antes de habilitar la operación.
+          </section>
+        )}
+
+        {currentUser.facilityId && visibleSections.includes("vehicle-entry") && visibleSections.includes("vehicle-exit") && (
           <section>
             <VehicleGatePanel
               facilityId={currentUser.facilityId || facility.id}
@@ -293,17 +322,18 @@ export const App: React.FC = () => {
           </section>
         )}
 
-        {visibleSections.includes("dashboard") && (
+        {currentUser.facilityId && visibleSections.includes("dashboard") && (
           <section><OperationalDashboard metrics={dashboardMetrics} loading={loadingMetrics} /></section>
         )}
 
-        {visibleSections.includes("config") && currentUser.role === "admin" && (
+        {currentUser.facilityId && visibleSections.includes("config") && currentUser.role === "admin" && (
           <section>
             <FacilityConfigView
               facility={facility}
               businessUnits={businessUnits}
               events={events}
               onRefresh={refreshActiveView}
+              onFacilityDeactivated={clearPrivateViewState}
             />
           </section>
         )}

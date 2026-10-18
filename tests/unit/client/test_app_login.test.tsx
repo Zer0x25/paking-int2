@@ -29,7 +29,18 @@ vi.mock("@client/components/OperationalDashboard", () => ({
   ),
 }));
 vi.mock("@client/components/FacilityConfigView", () => ({
-  FacilityConfigView: ({ facility }: { facility: { name: string } }) => <div data-testid="facility-config">{facility.name}</div>,
+  FacilityConfigView: ({ facility, onFacilityCreated }: {
+    facility: { id: string; name: string } | null;
+    onFacilityCreated?: (facility: { id: string; name: string; address: string; totalCapacity: number; createdAt: string; updatedAt: string }, token: string) => void;
+  }) => facility
+    ? <div data-testid="facility-config">{facility.name}</div>
+    : <div data-testid="facility-setup">
+      Crear recinto inicial
+      <button type="button" onClick={() => onFacilityCreated?.({
+        id: "new-facility", name: "New facility", address: "", totalCapacity: 80,
+        createdAt: "2026-10-18T12:00:00.000Z", updatedAt: "2026-10-18T12:00:00.000Z",
+      }, signedToken())}>Completar alta de prueba</button>
+    </div>,
 }));
 
 const adminUser: User = {
@@ -47,6 +58,12 @@ const operatorUser: User = {
   username: "operator-local",
   fullName: "Operador local",
   role: "operator",
+};
+
+const unassignedAdminUser: User = {
+  ...adminUser,
+  id: "local-admin-unassigned",
+  facilityId: null,
 };
 
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -150,6 +167,23 @@ describe("app authentication and role navigation", () => {
     render(<App />);
     expect(await screen.findByLabelText("Usuario")).toBeTruthy();
     expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((path) => path.startsWith("/api/"))).toEqual([]);
+  });
+
+  it("routes an authenticated admin without a facility to initial setup and hides operations", async () => {
+    localStorage.setItem("auth_user", JSON.stringify(unassignedAdminUser));
+    localStorage.setItem("auth_token", signedToken());
+    const fetchMock = installAppFetch();
+    render(<App />);
+
+    expect(await screen.findByTestId("facility-setup")).toBeTruthy();
+    expect(screen.queryByTestId("gate-panel")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Dashboard/ })).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/catalogs"))).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Completar alta de prueba" }));
+    expect(await screen.findByTestId("gate-panel")).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("auth_user") ?? "null").facilityId).toBe("new-facility");
+    expect(localStorage.getItem("auth_token")).toBeTruthy();
   });
 
   it("loads only each active view, does not poll, and clears identity on logout", async () => {

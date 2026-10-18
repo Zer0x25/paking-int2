@@ -7,11 +7,12 @@
 ## Summary
 
 Implementar la capacidad administrativa y operativa de:
-1. Crear y parametrizar la instalación principal (`Facility`) con su capacidad total física de plazas.
-2. Crear y configurar áreas o sectores de estacionamiento (`ParkingArea`), vinculables opcionalmente a unidades de negocio (ej. Exclusivo Hotel vs. Compartido).
-3. Definir y reajustar dinámicamente en caliente la capacidad de cada área, validando que la suma de áreas no exceda la capacidad total del recinto y que ninguna reducción de capacidad viole la cantidad de vehículos actualmente estacionados en el área.
-4. Extender el registro de entrada vehicular (`VehicleEntryForm`) y el dashboard operativo (`OperationalDashboard`) para reflejar la disponibilidad y ocupación desglosada por área física en tiempo real, operando bajo arquitectura offline-first con IndexedDB y sincronización hacia Cloudflare D1.
-5. Gestionar múltiples reservas contractuales de eventos desde Configuración: crear, editar y cancelar rangos de fecha y hora; aplicar cupos durante el intervalo del evento; conservarlas hasta el final del día de gracia posterior a su fecha de término.
+1. Completar el ciclo de vida del recinto (`Facility`): bootstrap del primer recinto por un administrador sin asignación, edición de sus datos y baja lógica con conservación de historial.
+2. Crear y parametrizar la instalación principal (`Facility`) con su capacidad total física de plazas.
+3. Crear y configurar áreas o sectores de estacionamiento (`ParkingArea`), vinculables opcionalmente a unidades de negocio (ej. Exclusivo Hotel vs. Compartido).
+4. Definir y reajustar dinámicamente en caliente la capacidad de cada área, validando que la suma de áreas no exceda la capacidad total del recinto y que ninguna reducción de capacidad viole la cantidad de vehículos actualmente estacionados en el área.
+5. Extender el registro de entrada vehicular (`VehicleEntryForm`) y el dashboard operativo (`OperationalDashboard`) para reflejar la disponibilidad y ocupación desglosada por área física en tiempo real, operando bajo arquitectura offline-first con IndexedDB y sincronización hacia Cloudflare D1.
+6. Gestionar múltiples reservas contractuales de eventos desde Configuración: crear, editar y cancelar rangos de fecha y hora; aplicar cupos durante el intervalo del evento; conservarlas hasta el final del día de gracia posterior a su fecha de término.
 
 ---
 
@@ -30,6 +31,8 @@ Implementar la capacidad administrativa y operativa de:
 **Constraints**:
 - Offline-first: Toda la parametrización de instalaciones y áreas debe poder realizarse y consultarse sin conexión, persistiendo en IndexedDB y resolviendo sincronización en cola outbox.
 - Cloudflare Free Tier awareness: Operaciones batch y sincronización incremental delta.  
+- El bootstrap inicial requiere conexión para asociar la identidad en D1 y emitir el JWT del recinto; las operaciones offline no sustituyen ese alta.
+- La baja del recinto es lógica y se rechaza mientras existan sesiones vehiculares activas; los tokens antiguos no pueden acceder a sus datos operativos.
 **Scale/Scope**:
 - Instalaciones con hasta 10,000 plazas y 50 áreas dinámicas simultáneas.
 
@@ -116,3 +119,4 @@ tests/
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
 | Persistencia durable de nuevas reservas en D1 fuera del proceso local | El backend de Configuración existente usa repositorios en memoria durante esta etapa de desarrollo; esta iteración reutiliza ese patrón para habilitar el CRUD y validar el flujo en la app local. Los registros creados en desarrollo se pierden al reiniciar el Worker. | Migrar todas las entidades de Configuración a D1 excede este cambio; persistir solo Eventos en D1 dejaría una dependencia parcial mientras instalaciones y unidades de negocio siguen en memoria. |
+| Bootstrap de identidad junto con la creación de recinto en D1 | El usuario autenticado aún no tiene `facility_id`; D1 debe asignar el recinto y el Worker emitir el JWT resultante solo si la creación y asignación se confirman juntas. | Crear el recinto sin asignar la identidad deja una fila inaccesible; obligar a cerrar e iniciar sesión añade un paso propenso a errores y no resuelve la carrera entre solicitudes.
