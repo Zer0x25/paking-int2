@@ -8,9 +8,9 @@ This project targets Workers + Workers Static Assets with D1 and Durable Objects
 |---|---|---|---|---|
 | Local | `paking-int2-worker` | Local D1 `paking-db` | Ignored local `.dev.vars` | Local Wrangler URL |
 | Staging | `paking-int2-worker-staging` | `paking-db-staging` | Cloudflare Worker secrets | `workers.dev` until a custom hostname is chosen |
-| Production | `paking-int2-worker-production` | `paking-db-production` | Cloudflare Worker secrets | `workers.dev` until a custom hostname is chosen |
+| Production | `paking-int2-worker-production` | `paking-db-production` | Cloudflare Worker secrets | `https://parking.zer0x.org` (custom domain; `workers.dev` disabled) |
 
-Named Wrangler environments do not inherit vars or service bindings. Keep the D1 IDs distinct and replace only the two matching placeholders in `wrangler.toml`. D1 IDs are account configuration, not credentials; API tokens and application secrets are credentials and must stay out of Git.
+Named Wrangler environments do not inherit vars or service bindings. Keep the D1 IDs distinct. The production ID is configured in `wrangler.toml`; D1 IDs are account configuration, not credentials. API tokens and application secrets are credentials and must stay out of Git.
 
 ## Local development and repository gates
 
@@ -37,7 +37,7 @@ Before remote provisioning, the two target preflights are expected to fail on th
 
 ## One-time Cloudflare account setup
 
-The account owner performs these steps in the intended Cloudflare account. Current staging provisioning evidence is recorded in the [release checklist](cloudflare-release-checklist.md); production provisioning remains outstanding.
+The account owner performs these steps in the intended Cloudflare account. Staging and production provisioning evidence is recorded in the [release checklist](cloudflare-release-checklist.md).
 
 1. Authenticate with the account owner’s Wrangler profile. For CI or service accounts, use a narrowly scoped API token stored in GitHub Secrets; do not paste it into chat or store it in the repository.
 2. Create separate D1 databases, one for each remote environment:
@@ -48,8 +48,8 @@ The account owner performs these steps in the intended Cloudflare account. Curre
    ```
 
 3. Copy each returned UUID into the matching `database_id` placeholder in `wrangler.toml`. Never use `local-d1-paking-db` for either remote target.
-4. Create the two Workers with the names in the environment map. Use these names for each environment: `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`, and `JWT_SECRET`. Use unique credentials per environment and a strong signing secret. Do not put values in `vars`, command arguments, source code, or this runbook. For an initial deployment when the Worker does not exist yet, Wrangler can create it and upload the secrets in the same operation: `npx wrangler deploy --env staging --secrets-file .dev.vars.staging`. The file must contain only staging credentials and remain private (`0600`). For a later release, use `npm run worker:deploy:staging`, which checks the remote secret names before deploying. Production requires its own completed preflight and explicit deployment authorization; `.dev.vars.production` is a local-development file and does not upload secrets by itself. `wrangler secret put` creates and deploys a Worker version immediately.
-5. Leave `workers_dev = true` for the initial deployment. Cloudflare supplies the account-specific workers.dev subdomain. If a custom domain is selected later, add the exact environment-specific route/domain to Wrangler configuration and disable workers.dev for that target; rerun preflight before release.
+4. Create the Workers with the names in the environment map. Use these names for each environment: `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`, and `JWT_SECRET`. Use unique credentials per environment and a strong signing secret. Do not put values in `vars`, command arguments, source code, or this runbook. For an initial deployment when the Worker does not exist yet, Wrangler can create it and upload the secrets in the same operation, for example `npx wrangler deploy --env staging --secrets-file .dev.vars.staging` or `npx wrangler deploy --env production --secrets-file .dev.vars.production`. Keep each file private (`0600`) and target-specific. For later releases, use `npm run worker:deploy:<target>`, which checks remote secret names before deploying. `.dev.vars.production` is used only for initial bootstrap; it does not upload secrets by itself. `wrangler secret put` creates and deploys a Worker version immediately.
+5. Use `workers_dev = true` when the generated workers.dev hostname is the intended target. For a custom domain, add the exact environment-specific custom-domain route to Wrangler and set `workers_dev = false`; rerun preflight before release. Production currently uses `parking.zer0x.org`, and Preview URLs are disabled by default for that environment.
 6. Verify the local target config:
 
    ```sh
@@ -76,7 +76,7 @@ The account owner performs these steps in the intended Cloudflare account. Curre
    ```
 
    Wrangler records applied migrations and captures a D1 backup after applying. Do not use `--local` for a remote release.
-   The facility lifecycle and initial space-category changes add `0002_facility_lifecycle.sql` and `0003_default_space_category.sql`; both are pending in the current staging D1 and must be reviewed before their code release.
+   The current staging D1 has migrations `0001` through `0004` applied; Wrangler reports no pending migrations. Review new SQL changes before each subsequent code release.
 4. After the initial Worker exists, run `npm run worker:deploy:staging` for later code releases. The release script validates local configuration, builds, reads only the remote secret names, and deploys only `--env staging`. Missing config or secret names stop before deployment.
 5. Check the deployed Worker URL and Workers Logs/Traces. Confirm source-mapped stacks identify the original TypeScript source. Run the smoke checks below before accepting the staging release.
 
@@ -94,7 +94,7 @@ The account owner performs these steps in the intended Cloudflare account. Curre
 
 ## Production release
 
-Production follows the same sequence as staging with `production` in every target-specific command and `paking-db-production` as the D1 database. Do not promote staging IDs or secrets into production. Review all quality gates, staging results, compatibility-date changes, migration SQL, secret names, and hostname before executing `npm run worker:deploy:production`.
+Production is deployed at `https://parking.zer0x.org` on `paking-int2-worker-production` with D1 `paking-db-production`. The custom domain is configured in `wrangler.toml`; `workers_dev` is disabled for production. The initial deployment uploaded production secrets from the private `.dev.vars.production` file and applied migrations `0001` through `0004`. For subsequent releases, review migration SQL, run `npm run worker:preflight:production`, and use `npm run worker:deploy:production`. Do not promote staging IDs or secrets into production. See the [release checklist](cloudflare-release-checklist.md) for deployment and smoke evidence, including checks that remain open.
 
 The release command is manual; CI does not deploy. The repository intentionally has no generic `worker:deploy` command that could select the top-level local configuration.
 

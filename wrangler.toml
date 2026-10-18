@@ -72,7 +72,7 @@ head_sampling_rate = 0.1
 
 [env.production]
 name = "paking-int2-worker-production"
-workers_dev = true
+workers_dev = false
 compatibility_date = "2026-10-18"
 compatibility_flags = ["nodejs_compat"]
 upload_source_maps = true
@@ -83,7 +83,7 @@ ENVIRONMENT = "production"
 [[env.production.d1_databases]]
 binding = "PARKING_DB"
 database_name = "paking-db-production"
-database_id = "__PRODUCTION_D1_DATABASE_ID__"
+database_id = "9b165ff1-4830-4206-a9f7-15dfd0ffd63d"
 migrations_dir = "src/server/db/migrations"
 
 [env.production.assets]
@@ -111,3 +111,7 @@ head_sampling_rate = 1
 [env.production.observability.traces]
 enabled = true
 head_sampling_rate = 0.1
+
+[[env.production.routes]]
+pattern = "parking.zer0x.org"
+custom_domain = true

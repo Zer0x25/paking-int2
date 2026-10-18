@@ -1,20 +1,20 @@
 # Cloudflare Release Readiness Checklist
 
-**Current status: STAGING DEPLOYED; CORE STAGING QA PASSED; PRODUCTION NOT READY.** Staging is live on `workers.dev`. Physical-device/second-facility isolation, source-mapped trace review, and D1 restore rehearsal remain open, along with production account setup.
+**Current status: PRODUCTION DEPLOYED; INITIAL PRODUCTION SMOKE PASSED.** Production is live at `https://parking.zer0x.org`. The second-facility isolation, physical second-device event, sampled source-mapped trace, and D1 restore rehearsal remain open; these are follow-up checks, not blockers for the operator's current single-facility workflow.
 
 ## Account and target setup
 
 - [ ] Confirm the Cloudflare account owner and least-privilege access for the maintainer.
 - [x] Create the staging D1 database `paking-db-staging`; its ID is configured in `wrangler.toml`.
-- [ ] Create the production D1 database `paking-db-production` and record its ID in the matching `wrangler.toml` environment.
+- [x] Create the production D1 database `paking-db-production`; its ID is configured in `wrangler.toml`.
 - [x] Create the staging Worker `paking-int2-worker-staging`.
-- [ ] Create the production Worker `paking-int2-worker-production`.
+- [x] Create the production Worker `paking-int2-worker-production`.
 - [x] Add the five required staging secrets from the private `.dev.vars.staging` file with the initial deployment. Values are excluded from Git and this checklist.
-- [ ] Add the same five required secret names with production-specific values to the production Worker using the approved secret channel.
+- [x] Add the five required production secret names and values from the private `.dev.vars.production` file during the initial deployment. Values are excluded from Git and this checklist.
 - [x] Use `workers.dev` as the initial staging hostname; it is enabled in `wrangler.toml`.
-- [ ] Confirm the production hostname or configure its exact custom domain and zone before a production release.
+- [x] Configure the custom domain `parking.zer0x.org` in the active `zer0x.org` zone; production `workers.dev` access is disabled.
 - [x] Run `npm run worker:preflight:staging`; the local configuration check passed and made no Cloudflare API request.
-- [ ] Run `npm run worker:preflight:production` after creating the production D1 and recording its ID.
+- [x] Run `npm run worker:preflight:production` after recording the production D1 ID.
 
 ## Release candidate and staging
 
@@ -62,9 +62,19 @@
 
 ## Production release
 
-- [ ] Review production IDs, secret names, hostname, migration SQL/state, compatibility date, and staging evidence independently from staging values.
-- [ ] Confirm a tested Worker version and D1 recovery point are available and that the incident owner knows the separate rollback/restore procedures.
-- [ ] Obtain explicit authorization for the production migration and deployment.
-- [ ] Apply reviewed migrations to production, deploy only with `npm run worker:deploy:production`, and complete the production smoke checks.
+- [x] Review production Worker/D1 IDs, secret names, custom hostname, migration SQL/state, compatibility date, and staging evidence independently from staging values.
+- [ ] Rehearse D1 restore on an isolated production copy and document the incident owner's separate Worker rollback/D1 restore procedures.
+- [x] Obtain explicit authorization for the production migration and deployment.
+- [x] Apply the reviewed migrations to production, deploy with `npm run worker:deploy:production`, and complete the production smoke checks.
+
+### Production release evidence — 2026-10-18
+
+- Source commit: `2276b9273aedfe4cecd7c2eb21d30e687b302dea` on `main`. The production D1 ID, `workers.dev = false`, and custom-domain route are deployed from local `wrangler.toml` changes that remain uncommitted.
+- D1: `paking-db-production` (`9b165ff1-4830-4206-a9f7-15dfd0ffd63d`); migrations `0001` through `0004` applied. Wrangler reports no pending migrations.
+- Worker: `paking-int2-worker-production`, version `2b72c400-cc67-417f-9657-01958fb91136`, at `https://parking.zer0x.org`; custom-domain HTTPS and TLS verification passed. The generated `workers.dev` and Preview URLs are disabled.
+- Secrets: all five required names are present as Cloudflare `secret_text`; values were uploaded from the local mode-`0600` file and were never printed.
+- Checks: production preflight, TypeScript/Vite/PWA build, Wrangler dry-run before initial deploy, deployment release script, root SPA HTTP 200, `/api/health` HTTP 200 with `Cache-Control: no-store`, and admin login HTTP 200.
+- Bootstrap: the first admin identity was initialized in production D1. It has no facility assigned yet, so the first login proceeds to the initial facility setup; no facility or sample business data was created.
+- Remaining checks: separate second-facility tenant isolation is not currently available in the operator's workflow; physical-device event invalidation, sampled source-mapped trace review, and isolated D1 restore remain unverified.
 
 The account owner and release operator must update this checklist with evidence after each item is completed. A successful local build or preflight does not satisfy a remote account, migration, staging, or smoke-check item.

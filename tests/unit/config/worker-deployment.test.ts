@@ -55,7 +55,7 @@ describe("Cloudflare named environment preflight", () => {
       .replace("__STAGING_D1_DATABASE_ID__", "11111111-1111-4111-8111-111111111111")
       .replace("__PRODUCTION_D1_DATABASE_ID__", "22222222-2222-4222-8222-222222222222");
     const missingEnvironment = complete.replace("[env.production.vars]\nENVIRONMENT = \"production\"", "[env.production.vars]");
-    const missingHostname = complete.replace("[env.production]\nname = \"paking-int2-worker-production\"\nworkers_dev = true", "[env.production]\nname = \"paking-int2-worker-production\"\nworkers_dev = false");
+    const missingHostname = complete.replace(/\n\[\[env\.production\.routes\]\]\npattern = "[^"]+"\ncustom_domain = true/, "");
     const missingSecrets = complete.replaceAll('"JWT_SECRET"', '"REMOVED_JWT_SECRET"');
     const missingObject = complete.replace(/(\[\[env\.production\.migrations\]\][\s\S]*?new_sqlite_classes = )\["FacilityEventHub"\]/, "$1[]");
     const mismatch = complete.replace("ENVIRONMENT = \"production\"", "ENVIRONMENT = \"staging\"");
