@@ -32,7 +32,8 @@ describe("Workers Static Assets configuration contract", () => {
       expect(wranglerConfig).toMatch(new RegExp(`^\\[env\\.${environment}\\]$`, "m"));
       expect(wranglerConfig).toContain(`ENVIRONMENT = "${environment}"`);
       expect(wranglerConfig).toContain(`database_name = "paking-db-${environment}"`);
-      expect(wranglerConfig).toContain(`__${environment.toUpperCase()}_D1_DATABASE_ID__`);
+      const database = wranglerConfig.match(new RegExp(`\\[\\[env\\.${environment}\\.d1_databases\\]\\]([\\s\\S]*?)(?=\\n\\[|$)`))?.[1] ?? "";
+      expect(database).toMatch(/database_id\s*=\s*"(?:[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}|__[A-Z0-9_]+__)"/i);
       expect(wranglerConfig).toContain(`[[env.${environment}.durable_objects.bindings]]`);
       expect(wranglerConfig).toContain(`[[env.${environment}.migrations]]`);
       expect(wranglerConfig).toContain(`[env.${environment}.secrets]`);

@@ -4,7 +4,7 @@
 
 - Node.js 22 and npm dependencies from `package-lock.json`.
 - No Cloudflare credentials are needed for the local validation commands.
-- A real staging/production D1 ID and configured remote secret names are required only for the explicit remote release commands; neither is available in this feature branch.
+- The staging D1 has been provisioned and its UUID is configured in `wrangler.toml`; production D1 and all remote Worker secrets remain external prerequisites.
 
 ## Local development stays local
 
@@ -35,11 +35,11 @@ npm run worker:preflight:staging
 npm run worker:preflight:production
 ```
 
-Expected before account provisioning: both commands fail with the target's placeholder D1 ID. They do not authenticate or contact Cloudflare. After D1 creation, replace the placeholder with the real database ID and rerun; never reuse the local D1 ID.
+Expected for the current checkout: staging passes its local TOML checks; production fails on its placeholder D1 ID. Neither command authenticates or contacts Cloudflare. Never reuse the local D1 ID for a remote target.
 
-## Remote stage release (not performed by this feature)
+## Current staging status and remaining checks
 
-After the account owner creates a separate staging D1 and Worker, adds all required staging secrets, and confirms the selected hostname, run `npm run worker:deploy:staging`. The release script checks the target locally, builds, reads remote secret names without reading values, then deploys only `--env staging`.
+The staging D1 exists and `0001_initial_persistence.sql` is applied. The facility lifecycle change adds `0002_facility_lifecycle.sql`; it is pending in staging and must be reviewed/applied before releasing this code. The currently deployed Worker predates that migration and the facility lifecycle changes. The initial Worker deployment used `npx wrangler deploy --env staging --secrets-file .dev.vars.staging` so code and staging secrets were published together. Wrangler confirmed all five secret names as `secret_text`; `/api/health` returned HTTP 200 with `Cache-Control: no-store`. For a later authorized staging release, run `npm run worker:deploy:staging`; it checks remote secret names without reading values before deploying.
 
 Before any production release, complete staging smoke checks for login, facility scoping, gate entry/exit, configuration changes, offline sync, event invalidation, private API `no-store`, and logs/traces/source maps. Review pending production migrations separately. For the Workers Free target, verify D1 reports `version: production` and record a recovery point within the 7-day Time Travel window.
 

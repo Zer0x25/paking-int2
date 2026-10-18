@@ -41,7 +41,7 @@ ENVIRONMENT = "staging"
 [[env.staging.d1_databases]]
 binding = "PARKING_DB"
 database_name = "paking-db-staging"
-database_id = "__STAGING_D1_DATABASE_ID__"
+database_id = "33b5b562-ebef-4bd6-aff9-c0026d4dc03c"
 migrations_dir = "src/server/db/migrations"
 
 [env.staging.assets]

@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { runRelease } from "../../../scripts/deploy/release.mjs";
 
-const originalConfig = readFileSync("wrangler.toml", "utf8");
+const originalConfig = readFileSync("wrangler.toml", "utf8")
+  .replace(/(\[\[env\.staging\.d1_databases\]\][\s\S]*?database_id\s*=\s*)"[^"]*"/, '$1"__STAGING_D1_DATABASE_ID__"')
+  .replace(/(\[\[env\.production\.d1_databases\]\][\s\S]*?database_id\s*=\s*)"[^"]*"/, '$1"__PRODUCTION_D1_DATABASE_ID__"');
 const stagingId = "11111111-1111-4111-8111-111111111111";
 const completeConfig = originalConfig.replace("__STAGING_D1_DATABASE_ID__", stagingId);
 const requiredSecrets = [

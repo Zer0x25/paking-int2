@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { inspectEnvironment } from "../../../scripts/deploy/validate-environment.mjs";
 
 const configPath = path.join(process.cwd(), "wrangler.toml");
-const originalConfig = readFileSync(configPath, "utf8");
+const originalConfig = readFileSync(configPath, "utf8")
+  .replace(/(\[\[env\.staging\.d1_databases\]\][\s\S]*?database_id\s*=\s*)"[^"]*"/, '$1"__STAGING_D1_DATABASE_ID__"')
+  .replace(/(\[\[env\.production\.d1_databases\]\][\s\S]*?database_id\s*=\s*)"[^"]*"/, '$1"__PRODUCTION_D1_DATABASE_ID__"');
 const expectedSecretNames = [
   "ADMIN_USERNAME",
   "ADMIN_PASSWORD",

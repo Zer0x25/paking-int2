@@ -37,7 +37,7 @@ Before remote provisioning, the two target preflights are expected to fail on th
 
 ## One-time Cloudflare account setup
 
-The account owner performs these steps in the intended Cloudflare account. None of these commands has been run by this feature.
+The account owner performs these steps in the intended Cloudflare account. Current staging provisioning evidence is recorded in the [release checklist](cloudflare-release-checklist.md); production provisioning remains outstanding.
 
 1. Authenticate with the account owner’s Wrangler profile. For CI or service accounts, use a narrowly scoped API token stored in GitHub Secrets; do not paste it into chat or store it in the repository.
 2. Create separate D1 databases, one for each remote environment:
@@ -48,7 +48,7 @@ The account owner performs these steps in the intended Cloudflare account. None 
    ```
 
 3. Copy each returned UUID into the matching `database_id` placeholder in `wrangler.toml`. Never use `local-d1-paking-db` for either remote target.
-4. Create the two Workers with the names in the environment map. Because `secrets.required` blocks a deploy until the required names already exist on the target Worker, create the Worker in the Cloudflare dashboard first and add all five required secrets before using the release command. Use these names for each environment: `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`, and `JWT_SECRET`. Use the appropriate target credentials and a unique, strong signing secret. Do not put values in `vars`, command arguments, source code, or this runbook. Wrangler `secret put` creates and deploys a Worker version immediately; for initial provisioning, add the complete set in the dashboard before the code release.
+4. Create the two Workers with the names in the environment map. Use these names for each environment: `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`, and `JWT_SECRET`. Use unique credentials per environment and a strong signing secret. Do not put values in `vars`, command arguments, source code, or this runbook. For an initial deployment when the Worker does not exist yet, Wrangler can create it and upload the secrets in the same operation: `npx wrangler deploy --env staging --secrets-file .dev.vars.staging`. The file must contain only staging credentials and remain private (`0600`). For a later release, use `npm run worker:deploy:staging`, which checks the remote secret names before deploying. Production requires its own completed preflight and explicit deployment authorization; `.dev.vars.production` is a local-development file and does not upload secrets by itself. `wrangler secret put` creates and deploys a Worker version immediately.
 5. Leave `workers_dev = true` for the initial deployment. Cloudflare supplies the account-specific workers.dev subdomain. If a custom domain is selected later, add the exact environment-specific route/domain to Wrangler configuration and disable workers.dev for that target; rerun preflight before release.
 6. Verify the local target config:
 
@@ -76,7 +76,8 @@ The account owner performs these steps in the intended Cloudflare account. None 
    ```
 
    Wrangler records applied migrations and captures a D1 backup after applying. Do not use `--local` for a remote release.
-4. Run `npm run worker:deploy:staging`. The release script validates local configuration, builds, reads only the remote secret names, and deploys only `--env staging`. Missing config or secret names stop before deployment.
+   The facility bootstrap and deactivation change adds `0002_facility_lifecycle.sql`; this migration is pending in the current staging D1 and must be reviewed before its code release.
+4. After the initial Worker exists, run `npm run worker:deploy:staging` for later code releases. The release script validates local configuration, builds, reads only the remote secret names, and deploys only `--env staging`. Missing config or secret names stop before deployment.
 5. Check the deployed Worker URL and Workers Logs/Traces. Confirm source-mapped stacks identify the original TypeScript source. Run the smoke checks below before accepting the staging release.
 
 ## Smoke checks before production
