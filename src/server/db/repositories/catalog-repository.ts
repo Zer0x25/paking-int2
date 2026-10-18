@@ -11,7 +11,7 @@ import type {
 import { createDrizzleDatabase, requireD1 } from "../client";
 import { eq } from "drizzle-orm";
 import { facilities } from "../schema";
-import type { AppEnvironment } from "../../types/app-environment";
+import type { AppD1Database, AppEnvironment } from "../../types/app-environment";
 import { createAuditStatement } from "./audit-repository";
 import {
   commitFacilityMutation,
@@ -36,13 +36,16 @@ import {
 type Bindings = AppEnvironment["Bindings"];
 type Actor = { userId: string };
 
-export interface FacilitySnapshot {
+export interface FacilityCatalogSnapshot {
   facility: Facility;
   facilityVersion: number;
   categories: SpaceCategory[];
   businessUnits: BusinessUnit[];
   areas: ParkingArea[];
   events: EventBooking[];
+}
+
+export interface FacilitySnapshot extends FacilityCatalogSnapshot {
   activeSessions: ParkingSession[];
 }
 
@@ -64,26 +67,46 @@ export async function listFacilities(bindings: Bindings, facilityId: string): Pr
   }));
 }
 
-export async function loadFacilitySnapshot(bindings: Bindings, facilityId: string): Promise<FacilitySnapshot | null> {
-  const database = requireD1(bindings);
-  const results = await database.batch([
+function facilityCatalogStatements(database: AppD1Database, facilityId: string) {
+  return [
     database.prepare("SELECT id, name, address, total_capacity, version, created_at, updated_at FROM facilities WHERE id = ? LIMIT 1").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, allocated_slots FROM space_categories WHERE facility_id = ? ORDER BY code").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, priority_level, quota_type, default_quota, is_active, version FROM business_units WHERE facility_id = ? ORDER BY priority_level, name").bind(facilityId),
     database.prepare("SELECT id, facility_id, name, code, description, allocated_capacity, business_unit_id, is_active, version, created_at, updated_at FROM parking_areas WHERE facility_id = ? ORDER BY name").bind(facilityId),
     database.prepare("SELECT id, facility_id, business_unit_id, title, reserved_slots, start_time, end_time, status, version FROM event_bookings WHERE facility_id = ? ORDER BY start_time").bind(facilityId),
-    database.prepare("SELECT id, facility_id, business_unit_id, space_category_id, parking_area_id, license_plate, entry_time, exit_time, status, duration_minutes, operator_user_id, device_id, version FROM parking_sessions WHERE facility_id = ? AND status = 'active' ORDER BY entry_time DESC").bind(facilityId),
-  ]);
+  ];
+}
 
-  const [facilityRow] = resultRows<FacilityRow>(results[0]);
+function mapFacilityCatalogs(results: unknown): FacilityCatalogSnapshot | null {
+  const resultList = results as unknown[];
+  const [facilityRow] = resultRows<FacilityRow>(resultList[0]);
   if (!facilityRow) return null;
   return {
     facility: facilityFromRow(facilityRow),
     facilityVersion: Number(facilityRow.version),
-    categories: resultRows<SpaceCategoryRow>(results[1]).map(spaceCategoryFromRow),
-    businessUnits: resultRows<BusinessUnitRow>(results[2]).map(businessUnitFromRow),
-    areas: resultRows<ParkingAreaRow>(results[3]).map(parkingAreaFromRow),
-    events: resultRows<EventBookingRow>(results[4]).map(eventBookingFromRow),
+    categories: resultRows<SpaceCategoryRow>(resultList[1]).map(spaceCategoryFromRow),
+    businessUnits: resultRows<BusinessUnitRow>(resultList[2]).map(businessUnitFromRow),
+    areas: resultRows<ParkingAreaRow>(resultList[3]).map(parkingAreaFromRow),
+    events: resultRows<EventBookingRow>(resultList[4]).map(eventBookingFromRow),
+  };
+}
+
+export async function loadFacilityCatalogs(bindings: Bindings, facilityId: string): Promise<FacilityCatalogSnapshot | null> {
+  const database = requireD1(bindings);
+  const results = await database.batch(facilityCatalogStatements(database, facilityId));
+  return mapFacilityCatalogs(results);
+}
+
+export async function loadFacilitySnapshot(bindings: Bindings, facilityId: string): Promise<FacilitySnapshot | null> {
+  const database = requireD1(bindings);
+  const results = await database.batch([
+    ...facilityCatalogStatements(database, facilityId),
+    database.prepare("SELECT id, facility_id, business_unit_id, space_category_id, parking_area_id, license_plate, entry_time, exit_time, status, duration_minutes, operator_user_id, device_id, version FROM parking_sessions WHERE facility_id = ? AND status = 'active' ORDER BY entry_time DESC").bind(facilityId),
+  ]);
+  const catalogs = mapFacilityCatalogs(results.slice(0, 5));
+  if (!catalogs) return null;
+  return {
+    ...catalogs,
     activeSessions: resultRows<ParkingSessionRow>(results[5]).map(parkingSessionFromRow),
   };
 }

@@ -43,6 +43,7 @@ import {
   createEventRecord,
   createFacilityRecord,
   listFacilities,
+  loadFacilityCatalogs,
   loadFacilitySnapshot,
   updateAreaRecord,
   updateBusinessUnitRecord,
@@ -451,7 +452,7 @@ facilityRoutes.patch("/:id/events/:eventId/status", authMiddleware("admin"), asy
 facilityRoutes.get("/:id/catalogs", async (c) => {
   const facilityId = c.req.param("id")!;
   try {
-    const snapshot = await loadFacilitySnapshot(c.env, facilityId);
+    const snapshot = await loadFacilityCatalogs(c.env, facilityId);
     if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
     return c.json({
       facility: snapshot.facility,

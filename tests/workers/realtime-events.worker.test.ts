@@ -34,14 +34,25 @@ function acceptSocket(response: Response): WebSocket {
   return socket;
 }
 
-function nextMessage(socket: WebSocket, timeoutMs = 2000): Promise<string> {
+function nextMessage(socket: WebSocket, matches: (payload: string) => boolean = () => true, timeoutMs = 2000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Timed out waiting for facility event")), timeoutMs);
-    socket.addEventListener("message", (event) => {
+    const onMessage = (event: Event) => {
+      const payload = String((event as MessageEvent).data);
+      if (!matches(payload)) return;
       clearTimeout(timeout);
-      resolve(String((event as MessageEvent).data));
-    }, { once: true });
+      socket.removeEventListener("message", onMessage);
+      resolve(payload);
+    };
+    const timeout = setTimeout(() => {
+      socket.removeEventListener("message", onMessage);
+      reject(new Error("Timed out waiting for facility event"));
+    }, timeoutMs);
+    socket.addEventListener("message", onMessage);
   });
+}
+
+function isEventVersion(version: number): (payload: string) => boolean {
+  return (payload) => (JSON.parse(payload) as { schemaVersion?: number }).schemaVersion === version;
 }
 
 async function expectNoMessage(socket: WebSocket): Promise<void> {
@@ -117,8 +128,10 @@ describe("authenticated facility change events", () => {
     const firstSocket = acceptSocket(firstConnection);
     const secondSocket = acceptSocket(secondConnection);
     const otherSocket = acceptSocket(otherConnection);
-    const firstEvent = nextMessage(firstSocket);
-    const secondEvent = nextMessage(secondSocket);
+    const firstLegacyEvent = nextMessage(firstSocket, isEventVersion(1));
+    const secondLegacyEvent = nextMessage(secondSocket, isEventVersion(1));
+    const firstScopedEvent = nextMessage(firstSocket, isEventVersion(2));
+    const secondScopedEvent = nextMessage(secondSocket, isEventVersion(2));
 
     const plate = `RT${crypto.randomUUID().replace(/-/g, "").slice(0, 4).toUpperCase()}`;
     const sessionId = `session-${crypto.randomUUID()}`;
@@ -140,9 +153,13 @@ describe("authenticated facility change events", () => {
       }),
     });
     expect(entry.status).toBe(201);
-    const [firstRaw, secondRaw] = await Promise.all([firstEvent, secondEvent]);
+    const [firstLegacy, secondLegacy] = await Promise.all([firstLegacyEvent, secondLegacyEvent]);
+    expect(JSON.parse(firstLegacy)).toMatchObject({ schemaVersion: 1, type: "facility.changed", facilityId, sourceClientId: "writer-tab" });
+    expect(secondLegacy).toBe(firstLegacy);
+    expect(firstLegacy).not.toContain(plate);
+    const [firstRaw, secondRaw] = await Promise.all([firstScopedEvent, secondScopedEvent]);
     const firstPayload = JSON.parse(firstRaw) as Record<string, unknown>;
-    expect(firstPayload).toMatchObject({ schemaVersion: 1, type: "facility.changed", facilityId, sourceClientId: "writer-tab" });
+    expect(firstPayload).toMatchObject({ schemaVersion: 2, type: "facility.changed", facilityId, scope: "parking", sourceClientId: "writer-tab" });
     expect(secondRaw).toBe(firstRaw);
     expect(firstRaw).not.toContain(plate);
     const stored = await getD1Database().prepare("SELECT id FROM parking_sessions WHERE id = ?").bind(sessionId).first<{ id: string }>();
@@ -172,15 +189,29 @@ describe("authenticated facility change events", () => {
     const published = await stub.fetch(new Request(`${room}/publish`, {
       method: "POST",
       body: JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         type: "facility.changed",
         facilityId: "facility-without-connections",
+        scope: "parking",
         changeId: crypto.randomUUID(),
         sourceClientId: "unit-test",
       }),
     }));
     expect(published.status).toBe(200);
     expect(await published.json()).toEqual({ delivered: 0 });
+
+    const invalidScope = await stub.fetch(new Request(`${room}/publish`, {
+      method: "POST",
+      body: JSON.stringify({
+        schemaVersion: 2,
+        type: "facility.changed",
+        facilityId: "facility-without-connections",
+        scope: "private-data",
+        changeId: crypto.randomUUID(),
+        sourceClientId: "unit-test",
+      }),
+    }));
+    expect(invalidScope.status).toBe(400);
   });
 
   it("delivers at least 95 of 100 committed changes within two seconds", async () => {
@@ -190,7 +221,7 @@ describe("authenticated facility change events", () => {
     const latenciesMs: number[] = [];
 
     for (let index = 0; index < 100; index += 1) {
-      const event = nextMessage(socket);
+      const event = nextMessage(socket, isEventVersion(2));
       const startedAt = performance.now();
       const entry = await workerFetch("/api/parking-sessions/entry", {
         method: "POST",
@@ -229,6 +260,15 @@ describe("authenticated facility change events", () => {
     expect(invalidWrite.status).toBe(400);
     await expectNoMessage(socket);
 
+    const configurationEvent = nextMessage(socket, isEventVersion(2));
+    const area = await workerFetch(`/api/facilities/${facilityId}/areas`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json", "X-Client-Id": "config-writer" },
+      body: JSON.stringify({ name: "Event space", code: `EV-${crypto.randomUUID().slice(0, 5)}`, allocatedCapacity: 10 }),
+    });
+    expect(area.status).toBe(201);
+    expect(JSON.parse(await configurationEvent)).toMatchObject({ scope: "configuration", sourceClientId: "config-writer" });
+
     const emptySync = await workerFetch("/api/sync/delta", {
       method: "POST",
       headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json", "X-Client-Id": "writer-tab" },
@@ -237,7 +277,7 @@ describe("authenticated facility change events", () => {
     expect(emptySync.status).toBe(200);
     await expectNoMessage(socket);
 
-    const invalidClientEvent = nextMessage(socket);
+    const invalidClientEvent = nextMessage(socket, isEventVersion(2));
     const invalidClientEntry = await workerFetch("/api/parking-sessions/entry", {
       method: "POST",
       headers: {
@@ -256,7 +296,7 @@ describe("authenticated facility change events", () => {
       }),
     });
     expect(invalidClientEntry.status).toBe(201);
-    expect(JSON.parse(await invalidClientEvent)).toMatchObject({ sourceClientId: "server" });
+    expect(JSON.parse(await invalidClientEvent)).toMatchObject({ scope: "parking", sourceClientId: "server" });
 
     const originalNamespace = bindings.FACILITY_EVENTS;
     Reflect.set(bindings, "FACILITY_EVENTS", undefined);

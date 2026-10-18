@@ -1,17 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
+import { FacilityChangedEventSchema } from "../../shared/facility-events";
 
 const ConnectionAttachmentSchema = z.object({
   facilityId: z.string().min(1),
   clientId: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
-}).strict();
-
-const FacilityChangeSchema = z.object({
-  schemaVersion: z.literal(1),
-  type: z.literal("facility.changed"),
-  facilityId: z.string().min(1),
-  changeId: z.string().uuid(),
-  sourceClientId: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
 }).strict();
 
 export class FacilityEventHub extends DurableObject<Env> {
@@ -53,7 +46,7 @@ export class FacilityEventHub extends DurableObject<Env> {
     } catch {
       return Response.json({ error: "Invalid event" }, { status: 400 });
     }
-    const parsed = FacilityChangeSchema.safeParse(input);
+    const parsed = FacilityChangedEventSchema.safeParse(input);
     if (!parsed.success) return Response.json({ error: "Invalid event" }, { status: 400 });
 
     let delivered = 0;
@@ -61,6 +54,13 @@ export class FacilityEventHub extends DurableObject<Env> {
       const attachment = ConnectionAttachmentSchema.safeParse(socket.deserializeAttachment());
       if (!attachment.success || attachment.data.facilityId !== parsed.data.facilityId) continue;
       try {
+        socket.send(JSON.stringify({
+          schemaVersion: 1,
+          type: "facility.changed",
+          facilityId: parsed.data.facilityId,
+          changeId: parsed.data.changeId,
+          sourceClientId: parsed.data.sourceClientId,
+        }));
         socket.send(JSON.stringify(parsed.data));
         delivered += 1;
       } catch {

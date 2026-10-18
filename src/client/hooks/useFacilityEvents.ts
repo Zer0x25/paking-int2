@@ -1,19 +1,11 @@
 import { useEffect, useRef } from "react";
-import { z } from "zod";
 import { getPageClientId } from "../api/client";
-
-const FacilityChangeSchema = z.object({
-  schemaVersion: z.literal(1),
-  type: z.literal("facility.changed"),
-  facilityId: z.string().min(1),
-  changeId: z.string().min(1),
-  sourceClientId: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
-}).strict();
+import { FacilityChangedEventSchema, type FacilityChangeScope } from "../../shared/facility-events";
 
 interface UseFacilityEventsOptions {
   facilityId: string | undefined;
   enabled: boolean;
-  onRefresh: () => void;
+  onRefresh: (scopes?: readonly FacilityChangeScope[]) => void;
 }
 
 export function useFacilityEvents({ facilityId, enabled, onRefresh }: UseFacilityEventsOptions): void {
@@ -36,8 +28,17 @@ export function useFacilityEvents({ facilityId, enabled, onRefresh }: UseFacilit
     let reconnectAttempt = 0;
     let connectedBefore = false;
     let deferredRefresh = false;
+    let pendingFullRefresh = false;
+    const pendingScopes = new Set<FacilityChangeScope>();
 
-    const scheduleRefresh = () => {
+    const flushRefresh = () => {
+      const scopes = pendingFullRefresh ? undefined : [...pendingScopes];
+      pendingFullRefresh = false;
+      pendingScopes.clear();
+      onRefreshRef.current(scopes);
+    };
+
+    const schedulePendingRefresh = () => {
       if (document.visibilityState !== "visible") {
         deferredRefresh = true;
         return;
@@ -45,8 +46,14 @@ export function useFacilityEvents({ facilityId, enabled, onRefresh }: UseFacilit
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         refreshTimer = undefined;
-        onRefreshRef.current();
+        flushRefresh();
       }, 60);
+    };
+
+    const scheduleRefresh = (scopes?: readonly FacilityChangeScope[]) => {
+      if (scopes === undefined) pendingFullRefresh = true;
+      else scopes.forEach((scope) => pendingScopes.add(scope));
+      schedulePendingRefresh();
     };
 
     const scheduleReconnect = () => {
@@ -76,9 +83,9 @@ export function useFacilityEvents({ facilityId, enabled, onRefresh }: UseFacilit
         } catch {
           return;
         }
-        const parsed = FacilityChangeSchema.safeParse(decoded);
+        const parsed = FacilityChangedEventSchema.safeParse(decoded);
         if (!parsed.success || parsed.data.facilityId !== facilityId || parsed.data.sourceClientId === clientId) return;
-        scheduleRefresh();
+        scheduleRefresh([parsed.data.scope]);
       };
       currentSocket.onerror = () => currentSocket.close();
       currentSocket.onclose = () => scheduleReconnect();
@@ -97,7 +104,7 @@ export function useFacilityEvents({ facilityId, enabled, onRefresh }: UseFacilit
     const handleVisibility = () => {
       if (document.visibilityState === "visible" && deferredRefresh) {
         deferredRefresh = false;
-        scheduleRefresh();
+        schedulePendingRefresh();
       }
     };
 

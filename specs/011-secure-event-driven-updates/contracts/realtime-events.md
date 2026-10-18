@@ -24,21 +24,23 @@ The Worker verifies the token signature and expiry, checks that its `facilityId`
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "type": "facility.changed",
   "facilityId": "fac-default-01",
+  "scope": "parking",
   "changeId": "uuid",
   "sourceClientId": "page-instance-id"
 }
 ```
 
-Messages carry no record data and do not authorize reads. Clients ignore messages with an unsupported schema version or another facility identifier. The source page ignores its own `sourceClientId`; all other connected pages may refresh their active view.
+`scope` is one of `parking` or `configuration`. Messages carry no record data and do not authorize reads. Clients ignore messages with an unsupported schema version, unknown scope, or another facility identifier. Version 2 adds the scope and requires clients to validate it before refreshing. During rollout, the server also sends the original version 1 invalidation shape so an already-open older tab continues to refresh its active view; version 2 clients ignore that compatibility message and handle the scoped version 2 message.
 
 ## Refresh behavior
 
-- Garita: refresh the facility catalogs and active-session list.
-- Dashboard: refresh metrics.
-- Configuration: refresh only configuration data required by the visible view.
+- Garita: a `parking` change refreshes the active-session list; a `configuration` change refreshes catalogs.
+- Dashboard: either change scope refreshes metrics.
+- Configuration: only a `configuration` change refreshes configuration data.
 - A hidden view does not issue reads when an event arrives; it reads when opened.
-- Initial view activation performs its normal read; a connection restored after an interruption refreshes the active view once.
+- Initial view activation performs its normal read; a connection restored after an interruption refreshes all data required by the active view once.
+- Multiple scopes received together are coalesced and each target is refreshed at most once.
 - The client reconnects with bounded exponential backoff while authenticated and online. There is no timer-based data polling.

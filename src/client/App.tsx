@@ -26,6 +26,8 @@ import {
 import { apiFetch, getTokenExpirationMs, SESSION_EXPIRED_EVENT } from "./api/client";
 import { useFacilityEvents } from "./hooks/useFacilityEvents";
 import { cacheCatalogData, getCachedCatalogData, getLocalAreas, saveLocalArea } from "./db/indexed-db";
+import { getFacilityRefreshTargets } from "./utils/facility-refresh";
+import type { FacilityChangeScope } from "../shared/facility-events";
 
 const LOCAL_FACILITY_ID = "fac-default-01";
 
@@ -195,10 +197,11 @@ export const App: React.FC = () => {
     if (currentUser && activeTab === "dashboard") void fetchDashboard();
   }, [activeTab, currentUser, fetchDashboard]);
 
-  const refreshActiveView = useCallback(() => {
-    if (activeTab === "dashboard") void fetchDashboard();
-    if (activeTab === "garita" || activeTab === "config") void fetchCatalogs();
-    if (activeTab === "garita") setGateRefreshKey((current) => current + 1);
+  const refreshActiveView = useCallback((scopes?: readonly FacilityChangeScope[]) => {
+    const targets = getFacilityRefreshTargets(activeTab, scopes);
+    if (targets.includes("dashboard")) void fetchDashboard();
+    if (targets.includes("catalogs")) void fetchCatalogs();
+    if (targets.includes("sessions")) setGateRefreshKey((current) => current + 1);
   }, [activeTab, fetchCatalogs, fetchDashboard]);
 
   const refreshAfterSync = useCallback(() => {

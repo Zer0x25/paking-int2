@@ -33,8 +33,8 @@ class MockWebSocket {
   }
 }
 
-function eventPayload(facilityId: string, sourceClientId = "other-tab"): string {
-  return JSON.stringify({ schemaVersion: 1, type: "facility.changed", facilityId, changeId: crypto.randomUUID(), sourceClientId });
+function eventPayload(facilityId: string, sourceClientId = "other-tab", scope = "parking"): string {
+  return JSON.stringify({ schemaVersion: 2, type: "facility.changed", facilityId, scope, changeId: crypto.randomUUID(), sourceClientId });
 }
 
 let visibility = "visible";
@@ -68,14 +68,19 @@ describe("facility event client", () => {
 
     act(() => {
       socket.message(JSON.stringify({ schemaVersion: 9, type: "facility.changed", facilityId: "facility-1", changeId: "x", sourceClientId: "other" }));
+      socket.message(JSON.stringify({ schemaVersion: 1, type: "facility.changed", facilityId: "facility-1", scope: "private-data", changeId: crypto.randomUUID(), sourceClientId: "other" }));
       socket.message(eventPayload("another-facility"));
       socket.message(eventPayload("facility-1", getPageClientId()));
     });
     expect(onRefresh).not.toHaveBeenCalled();
 
-    act(() => socket.message(eventPayload("facility-1")));
+    act(() => {
+      socket.message(eventPayload("facility-1", "other-tab", "parking"));
+      socket.message(eventPayload("facility-1", "third-tab", "configuration"));
+    });
     await act(async () => new Promise((resolve) => setTimeout(resolve, 70)));
     expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalledWith(["parking", "configuration"]);
   });
 
   it("defers hidden-page invalidations until visibility returns", async () => {
@@ -83,13 +88,17 @@ describe("facility event client", () => {
     renderHook(() => useFacilityEvents({ facilityId: "facility-1", enabled: true, onRefresh }));
     const socket = MockWebSocket.instances[0];
     visibility = "hidden";
-    act(() => socket.message(eventPayload("facility-1")));
+    act(() => {
+      socket.message(eventPayload("facility-1", "other-tab", "parking"));
+      socket.message(eventPayload("facility-1", "third-tab", "configuration"));
+    });
     expect(onRefresh).not.toHaveBeenCalled();
 
     visibility = "visible";
     act(() => document.dispatchEvent(new Event("visibilitychange")));
     await act(async () => new Promise((resolve) => setTimeout(resolve, 70)));
     expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalledWith(["parking", "configuration"]);
   });
 
   it("refreshes the active view after a successful reconnect", async () => {
