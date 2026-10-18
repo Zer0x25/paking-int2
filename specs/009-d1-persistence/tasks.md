@@ -184,3 +184,10 @@ There is no deployable partial slice because the purpose is to remove the split 
 ## Phase 8: Convergence
 
 - [ ] T053 Complete authenticated browser verification of administrator and operator login, Garita, Dashboard, Configuración, restart persistence, and offline sync after private `.dev.vars` values are configured per T050 (partial)
+
+## Phase 9: Reliable Local Worker Startup
+
+- [x] T054 [P] Write failing Vitest cases for identifying this checkout's Wrangler Worker, graceful replacement, stable port 8787, and refusing unrelated listeners in `tests/unit/scripts/test_dev_worker.test.ts`.
+- [x] T055 Implement the safe Worker restart launcher and route `npm run worker:dev` through it in `scripts/dev-worker.mjs`, `scripts/worker-dev-lifecycle.mjs`, its declaration file, and `package.json`.
+- [x] T056 Document the restart behavior and record the process-ownership decision in `specs/009-d1-persistence/quickstart.md` and `history/adr/ADR-015-local-worker-restart.md`.
+- [x] T057 Verify repeated starts leave one Worker on 8787, check `/api/health`, and run the targeted Vitest, lint, and typecheck gates.

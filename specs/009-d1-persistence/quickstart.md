@@ -19,6 +19,8 @@
    npm run worker:dev
    ```
 
+   Este comando reemplaza ordenadamente instancias Worker anteriores de este checkout y usa el puerto 8787 esperado por Vite. Si otro programa ocupa el puerto, informa el conflicto sin cerrarlo ni cambiar a 8788.
+
 3. En otra terminal, iniciar la PWA:
 
    ```bash

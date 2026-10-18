@@ -18,6 +18,7 @@ Replace every Worker-side in-memory store with Cloudflare D1 repositories using 
 **Project Type**: React/Vite PWA plus Hono Worker API
 **Performance Goals**: No new network request per catalog row; read grouped catalog and dashboard data in bounded queries; login checks use local credentials and a D1 identity lookup
 **Constraints**: Preserve public route shapes, roles, version checks, and IndexedDB outbox behavior. D1 writes for an operational change, its audit entry, and its idempotency receipt must commit together.
+**Local Worker lifecycle**: `npm run worker:dev` replaces only prior Wrangler dev processes launched from this checkout and binds to port 8787, which Vite proxies. It refuses unrelated port owners and does not accept Wrangler's automatic alternate-port fallback.
 **Scale/Scope**: Current application entities and single-facility development fixture; no bulk import from an existing central database because none exists.
 
 ## Constitution Check
@@ -74,6 +75,7 @@ See [data-model.md](data-model.md), [contracts/](contracts/), and [quickstart.md
 - A local initialization command applies unapplied migrations and inserts the non-sensitive development fixture only when the catalog is empty. Seeded catalog changes are not overwritten on restart. On first login, local identity/role rows are inserted if absent even when the catalog already exists.
 - `.dev.vars.example` documents `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`, and `JWT_SECRET` with empty placeholders. `.dev.vars` and local variants are ignored by Git while the example template remains tracked. Do not output or print secret values.
 - Existing `.wrangler` state is preserved; no reset or database deletion command is part of the workflow.
+- The Worker dev launcher identifies its own Wrangler process by the checkout's executable path and `src/server/index.ts` entry point, requests graceful shutdown, waits for exit, then starts on 8787. If ownership is ambiguous or the requested port remains occupied, it stops with an actionable error and never signals the unknown process.
 
 ## Project Structure
 
@@ -115,6 +117,8 @@ tests/
 ├── unit/server/                            # Repository/service unit tests where appropriate
 └── workers/                                # D1 route integration and restart/replay behavior
 scripts/db/                                 # Safe local migration and seed helpers
+scripts/dev-worker.mjs                      # Replace this checkout's prior Worker and bind port 8787
+scripts/worker-dev-lifecycle.mjs             # Detect owned Wrangler processes and enforce the expected port
 ```
 
 **Structure Decision**: Keep the current single-project layout. Add persistence adapters beneath `src/server/db/`, and test them with the existing Worker Vitest configuration under `tests/workers/`.

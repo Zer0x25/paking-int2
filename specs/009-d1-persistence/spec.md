@@ -9,6 +9,7 @@
 
 ### Session 2026-10-17
 - Q: ¿Cómo se deben cargar las cuentas de desarrollo al iniciar con la nueva persistencia? → A: Leer y validar las credenciales desde `.dev.vars` local, fuera de Git; persistir en D1 únicamente identidad y rol.
+- Q: ¿Qué debe ocurrir al iniciar el Worker local si ya hay una instancia del proyecto activa? → A: Cerrar de forma ordenada las instancias Wrangler de este mismo checkout, iniciar una sola en el puerto 8787 esperado por Vite y nunca terminar un proceso que no se pueda identificar como propio del proyecto.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -68,6 +69,19 @@ Como administrador, quiero conservar en D1 la identidad y el rol de administrado
 2. **Given** un registro de usuario persistido, **When** se revisan sus campos, **Then** contiene la identidad y el rol, pero no una contraseña ni un hash de contraseña.
 3. **Given** una cuenta inexistente o una contraseña incorrecta, **When** intenta autenticarse, **Then** el acceso se rechaza y no se revela si el usuario existe.
 
+### User Story 5 - Reiniciar el Worker local en un puerto estable (Priority: P1)
+
+Como desarrollador, quiero iniciar el Worker sin dejar instancias anteriores de este proyecto ocupando el puerto esperado por Vite, para que la interfaz siempre alcance la API correcta.
+
+**Why this priority**: Una instancia anterior hace que Wrangler elija otro puerto mientras Vite continúa enviando `/api` a 8787, lo que impide usar el entorno integrado.
+
+**Independent Test**: Iniciar el Worker dos veces; verificar que la primera instancia termina ordenadamente, la nueva queda en 8787 y un listener ajeno nunca se termina.
+
+**Acceptance Scenarios**:
+
+1. **Given** una instancia Wrangler de este checkout, **When** se inicia de nuevo el Worker, **Then** la instancia anterior se cierra y una sola nueva instancia queda en el puerto 8787.
+2. **Given** que un proceso no identificable como Worker de este checkout ocupa 8787, **When** se inicia el Worker, **Then** el comando informa el conflicto y no termina el proceso ajeno ni deja la API en un puerto alternativo.
+
 ### Edge Cases
 
 - Una migración se ejecuta más de una vez o el servicio se interrumpe durante su preparación; al volver a iniciar, el esquema queda en un estado consistente.
@@ -97,6 +111,7 @@ Como administrador, quiero conservar en D1 la identidad y el rol de administrado
 - **FR-013**: La inicialización local DEBE poder ejecutarse de forma reproducible sobre una base vacía y mantener el mismo resultado al repetirse.
 - **FR-014**: Si falta una credencial o el secreto de firma en un entorno local, la autenticación DEBE fallar de forma segura y explicar cuál configuración falta sin devolver valores secretos.
 - **FR-015**: Esta iteración DEBE limitarse a desarrollo local y verificación automatizada; no incluye crear o migrar una base productiva, cambiar credenciales productivas ni desplegar la aplicación.
+- **FR-016**: El comando de desarrollo del Worker DEBE reemplazar de forma ordenada instancias Wrangler anteriores de este checkout y usar el puerto local 8787 esperado por Vite; DEBE detenerse con un error claro si otro proceso ocupa ese puerto y no debe terminarlo ni dejar el Worker en un puerto alternativo.
 
 ### Key Entities
 
@@ -120,6 +135,7 @@ Como administrador, quiero conservar en D1 la identidad y el rol de administrado
 - **SC-005**: La autenticación conserva la identidad y las restricciones de ambos roles después de reiniciar el servicio; D1 no contiene contraseñas ni hashes.
 - **SC-006**: Una instalación limpia de desarrollo puede inicializar el esquema y el catálogo base siguiendo los pasos documentados, sin depender de datos guardados en memoria.
 - **SC-007**: Una falla al guardar se presenta al operador como error y deja sin confirmar tanto el cambio como su auditoría.
+- **SC-008**: Dos inicios consecutivos del Worker dejan una sola instancia de este checkout escuchando en 8787; un proceso ajeno que ocupe el puerto permanece activo y el nuevo inicio falla de forma clara.
 
 ## Assumptions
 
@@ -129,3 +145,4 @@ Como administrador, quiero conservar en D1 la identidad y el rol de administrado
 - El usuario eligió `.dev.vars` como origen local no versionado para las credenciales de desarrollo y el secreto de firma; D1 guarda identidad y rol, y las contraseñas permanecen solo en `.dev.vars`.
 - Los atajos visuales de acceso rápido no deben contener ni exponer contraseñas; se conservará la pantalla de ingreso normal.
 - El despliegue productivo y cualquier base de datos real requieren una etapa y autorización explícitas posteriores.
+- El comando de reinicio administra únicamente procesos Wrangler de desarrollo identificados por este checkout; nunca termina procesos por el solo hecho de ocupar un puerto.

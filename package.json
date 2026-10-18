@@ -15,7 +15,7 @@
     "db:local:init": "node scripts/db/init-local.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.workers.json",
     "lint": "eslint .",
-    "worker:dev": "wrangler dev src/server/index.ts",
+    "worker:dev": "node scripts/dev-worker.mjs",
     "worker:deploy": "wrangler deploy src/server/index.ts"
   },
   "dependencies": {

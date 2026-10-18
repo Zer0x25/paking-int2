@@ -30,6 +30,7 @@
 - [ ] CHK013 Can a clean local D1 setup apply migrations and seed only development data without a remote resource?
 - [ ] CHK014 Are production database creation, production data migration, and deployment explicitly outside this feature?
 - [ ] CHK015 Does verification include Worker runtime tests, migration replay, restart persistence, offline retry, and a real browser flow?
+- [ ] CHK016 Does the local Worker launcher replace only a prior instance of this checkout, preserve port 8787, and refuse to terminate an unrelated listener?
 
 ## Notes
 
