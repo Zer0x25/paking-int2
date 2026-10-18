@@ -4,6 +4,7 @@ import type {
   ParkingAreaMetrics,
   CreateParkingAreaInput,
 } from "../types/schema";
+import { BusinessRuleError } from "../errors/business-rule-error";
 import { createUuid } from "../utils/uuid";
 
 /**
@@ -27,20 +28,20 @@ export function validateFacilityCapacity(
   currentTotalOccupancy: number = 0
 ): void {
   if (!Number.isInteger(newTotalCapacity) || newTotalCapacity <= 0) {
-    throw new Error("La capacidad total debe ser mayor a 0 y un número entero");
+    throw new BusinessRuleError("La capacidad total debe ser mayor a 0 y un número entero");
   }
 
   const activeAreas = areas.filter((a) => a.isActive);
   const allocatedSum = activeAreas.reduce((sum, a) => sum + a.allocatedCapacity, 0);
 
   if (newTotalCapacity < allocatedSum) {
-    throw new Error(
+    throw new BusinessRuleError(
       `La capacidad total no puede ser inferior a la suma de plazas asignadas a las áreas (${allocatedSum})`
     );
   }
 
   if (newTotalCapacity < currentTotalOccupancy) {
-    throw new Error(
+    throw new BusinessRuleError(
       `La capacidad total no puede ser inferior a los vehículos actualmente aparcados en el recinto (${currentTotalOccupancy})`
     );
   }
@@ -60,12 +61,12 @@ export function createParkingArea(
     (a) => a.facilityId === input.facilityId && a.code.toUpperCase() === normCode
   );
   if (codeExists) {
-    throw new Error(`El código de área "${normCode}" ya existe en esta instalación`);
+    throw new BusinessRuleError(`El código de área "${normCode}" ya existe en esta instalación`);
   }
 
   const availableBuffer = calculateFacilityBuffer(facilityTotalCapacity, existingAreas);
   if (input.allocatedCapacity > availableBuffer) {
-    throw new Error(
+    throw new BusinessRuleError(
       `La capacidad solicitada (${input.allocatedCapacity}) supera el buffer disponible de la instalación (${availableBuffer})`
     );
   }
@@ -110,26 +111,26 @@ export function reallocateAreaCapacity(params: ReallocateCapacityParams): Parkin
   } = params;
 
   if (!Number.isInteger(newCapacity) || newCapacity < 0) {
-    throw new Error("La nueva capacidad debe ser un número entero mayor o igual a 0");
+    throw new BusinessRuleError("La nueva capacidad debe ser un número entero mayor o igual a 0");
   }
 
   const areaIndex = areas.findIndex((a) => a.id === areaId);
   if (areaIndex === -1) {
-    throw new Error(`Área con ID "${areaId}" no encontrada`);
+    throw new BusinessRuleError(`Área con ID "${areaId}" no encontrada`);
   }
 
   const targetArea = areas[areaIndex];
 
   // Control de concurrencia optimista
   if (targetArea.version !== expectedVersion) {
-    throw new Error(
+    throw new BusinessRuleError(
       `Conflicto de concurrencia optimista: la versión esperada era ${expectedVersion} pero el área se encuentra en la versión ${targetArea.version}`
     );
   }
 
   // Protección contra reducción menor a ocupación física actual
   if (newCapacity < activeOccupancy) {
-    throw new Error(
+    throw new BusinessRuleError(
       `No es posible reducir la capacidad a ${newCapacity}: hay ${activeOccupancy} vehículos actualmente estacionados en esta área`
     );
   }
@@ -141,7 +142,7 @@ export function reallocateAreaCapacity(params: ReallocateCapacityParams): Parkin
 
   if (otherAreasAllocated + newCapacity > facilityTotalCapacity) {
     const maxAllowed = facilityTotalCapacity - otherAreasAllocated;
-    throw new Error(
+    throw new BusinessRuleError(
       `La nueva capacidad (${newCapacity}) superaría la capacidad total de la instalación (${facilityTotalCapacity}). Máximo permitido para esta área: ${maxAllowed}`
     );
   }
@@ -182,15 +183,15 @@ export function updateParkingArea(params: UpdateParkingAreaParams): ParkingArea 
   } = params;
   const areaIndex = areas.findIndex((area) => area.id === areaId);
   if (areaIndex === -1) {
-    throw new Error(`Área con ID "${areaId}" no encontrada`);
+    throw new BusinessRuleError(`Área con ID "${areaId}" no encontrada`);
   }
 
   const targetArea = areas[areaIndex];
   if (!targetArea.isActive) {
-    throw new Error("No se puede editar un área inactiva");
+    throw new BusinessRuleError("No se puede editar un área inactiva");
   }
   if (targetArea.version !== expectedVersion) {
-    throw new Error(
+    throw new BusinessRuleError(
       `Conflicto de concurrencia optimista: la versión esperada era ${expectedVersion} pero el área se encuentra en la versión ${targetArea.version}`
     );
   }
@@ -198,10 +199,10 @@ export function updateParkingArea(params: UpdateParkingAreaParams): ParkingArea 
   const normalizedName = name.trim();
   const normalizedCode = code.trim().toUpperCase();
   if (normalizedName.length < 2) {
-    throw new Error("El nombre del área debe tener al menos 2 caracteres");
+    throw new BusinessRuleError("El nombre del área debe tener al menos 2 caracteres");
   }
   if (normalizedCode.length < 1 || normalizedCode.length > 10) {
-    throw new Error("El código del área debe tener entre 1 y 10 caracteres");
+    throw new BusinessRuleError("El código del área debe tener entre 1 y 10 caracteres");
   }
   if (
     areas.some(
@@ -211,13 +212,13 @@ export function updateParkingArea(params: UpdateParkingAreaParams): ParkingArea 
         area.code.trim().toUpperCase() === normalizedCode
     )
   ) {
-    throw new Error(`El código de área "${normalizedCode}" ya existe en esta instalación`);
+    throw new BusinessRuleError(`El código de área "${normalizedCode}" ya existe en esta instalación`);
   }
   if (!Number.isInteger(allocatedCapacity) || allocatedCapacity < 0) {
-    throw new Error("La nueva capacidad debe ser un número entero mayor o igual a 0");
+    throw new BusinessRuleError("La nueva capacidad debe ser un número entero mayor o igual a 0");
   }
   if (allocatedCapacity < activeOccupancy) {
-    throw new Error(
+    throw new BusinessRuleError(
       `No es posible reducir la capacidad a ${allocatedCapacity}: hay ${activeOccupancy} vehículos actualmente estacionados en esta área`
     );
   }
@@ -227,7 +228,7 @@ export function updateParkingArea(params: UpdateParkingAreaParams): ParkingArea 
     .reduce((sum, area) => sum + area.allocatedCapacity, 0);
   if (otherAreasAllocated + allocatedCapacity > facilityTotalCapacity) {
     const maxAllowed = facilityTotalCapacity - otherAreasAllocated;
-    throw new Error(
+    throw new BusinessRuleError(
       `La nueva capacidad (${allocatedCapacity}) superaría la capacidad total de la instalación (${facilityTotalCapacity}). Máximo permitido para esta área: ${maxAllowed}`
     );
   }
@@ -255,18 +256,18 @@ export function deactivateParkingArea(params: DeactivateParkingAreaParams): Park
   const { areaId, areas, activeOccupancy, expectedVersion } = params;
   const targetArea = areas.find((area) => area.id === areaId);
   if (!targetArea) {
-    throw new Error(`Área con ID "${areaId}" no encontrada`);
+    throw new BusinessRuleError(`Área con ID "${areaId}" no encontrada`);
   }
   if (targetArea.version !== expectedVersion) {
-    throw new Error(
+    throw new BusinessRuleError(
       `Conflicto de concurrencia optimista: la versión esperada era ${expectedVersion} pero el área se encuentra en la versión ${targetArea.version}`
     );
   }
   if (!targetArea.isActive) {
-    throw new Error("El área ya se encuentra inactiva");
+    throw new BusinessRuleError("El área ya se encuentra inactiva");
   }
   if (activeOccupancy > 0) {
-    throw new Error(
+    throw new BusinessRuleError(
       `No se puede desactivar el área: hay ${activeOccupancy} vehículo${activeOccupancy === 1 ? "" : "s"} actualmente estacionado${activeOccupancy === 1 ? "" : "s"}`
     );
   }

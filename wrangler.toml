@@ -1,7 +1,8 @@
 name = "paking-int2-worker"
 main = "src/server/index.ts"
-compatibility_date = "2024-10-15"
-compatibility_flags = ["nodejs_compat", "assets_navigation_prefers_asset_serving"]
+compatibility_date = "2026-10-18"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
 
 [vars]
 ENVIRONMENT = "development"
@@ -23,3 +24,90 @@ class_name = "FacilityEventHub"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["FacilityEventHub"]
+
+[secrets]
+required = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "OPERATOR_USERNAME", "OPERATOR_PASSWORD", "JWT_SECRET"]
+
+[env.staging]
+name = "paking-int2-worker-staging"
+workers_dev = true
+compatibility_date = "2026-10-18"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
+[[env.staging.d1_databases]]
+binding = "PARKING_DB"
+database_name = "paking-db-staging"
+database_id = "__STAGING_D1_DATABASE_ID__"
+migrations_dir = "src/server/db/migrations"
+
+[env.staging.assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+[[env.staging.durable_objects.bindings]]
+name = "FACILITY_EVENTS"
+class_name = "FacilityEventHub"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_sqlite_classes = ["FacilityEventHub"]
+
+[env.staging.secrets]
+required = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "OPERATOR_USERNAME", "OPERATOR_PASSWORD", "JWT_SECRET"]
+
+[env.staging.observability]
+enabled = true
+
+[env.staging.observability.logs]
+enabled = true
+head_sampling_rate = 1
+
+[env.staging.observability.traces]
+enabled = true
+head_sampling_rate = 0.1
+
+[env.production]
+name = "paking-int2-worker-production"
+workers_dev = true
+compatibility_date = "2026-10-18"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
+
+[env.production.vars]
+ENVIRONMENT = "production"
+
+[[env.production.d1_databases]]
+binding = "PARKING_DB"
+database_name = "paking-db-production"
+database_id = "__PRODUCTION_D1_DATABASE_ID__"
+migrations_dir = "src/server/db/migrations"
+
+[env.production.assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+[[env.production.durable_objects.bindings]]
+name = "FACILITY_EVENTS"
+class_name = "FacilityEventHub"
+
+[[env.production.migrations]]
+tag = "v1"
+new_sqlite_classes = ["FacilityEventHub"]
+
+[env.production.secrets]
+required = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "OPERATOR_USERNAME", "OPERATOR_PASSWORD", "JWT_SECRET"]
+
+[env.production.observability]
+enabled = true
+
+[env.production.observability.logs]
+enabled = true
+head_sampling_rate = 1
+
+[env.production.observability.traces]
+enabled = true
+head_sampling_rate = 0.1

@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { verifyJwt } from "../middleware/auth";
 import type { AppEnvironment } from "../types/app-environment";
+import { logServerError } from "../middleware/request-logging";
+import { GENERIC_SERVER_ERROR } from "./http-errors";
 
 export const realtimeRoutes = new Hono<AppEnvironment>();
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
@@ -16,7 +18,10 @@ realtimeRoutes.get("/:facilityId", async (c) => {
   }
 
   const secret = c.env?.JWT_SECRET;
-  if (!secret) return c.json({ error: "Falta configurar JWT_SECRET" }, 500);
+  if (!secret) {
+    logServerError(c, new Error("JWT signing secret is not configured"));
+    return c.json({ error: GENERIC_SERVER_ERROR, status: 500 }, 500);
+  }
   const identity = await verifyJwt(offered[1], secret);
   if (!identity) return c.json({ error: "Token inválido o expirado" }, 401);
 
@@ -31,7 +36,10 @@ realtimeRoutes.get("/:facilityId", async (c) => {
   }
 
   const namespace = c.env.FACILITY_EVENTS;
-  if (!namespace) return c.json({ error: "Canal de eventos no disponible" }, 503);
+  if (!namespace) {
+    logServerError(c, new Error("Facility event namespace binding is unavailable"), 503);
+    return c.json({ error: "Servicio temporalmente no disponible" }, 503);
+  }
   const stub = namespace.get(namespace.idFromName(facilityId));
   const request = new Request("https://facility-events.internal/connect", {
     headers: {

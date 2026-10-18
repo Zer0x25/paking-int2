@@ -25,7 +25,10 @@ describe("Worker API startup and fail-closed behavior", () => {
     }, environment);
     expect(read.status).toBe(500);
     expect(create.status).toBe(500);
-    expect(((await create.json()) as { error: string }).error).toMatch(/PARKING_DB/i);
+    expect(((await read.json()) as { error: string }).error).toBe("Error interno del servidor");
+    expect(((await create.json()) as { error: string }).error).toBe("Error interno del servidor");
+    expect(read.headers.get("Cache-Control")).toBe("no-store");
+    expect(create.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("requires a configured signing secret for protected routes", async () => {
@@ -34,6 +37,7 @@ describe("Worker API startup and fail-closed behavior", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(response.status).toBe(500);
-    expect(((await response.json()) as { error: string }).error).toMatch(/JWT_SECRET/i);
+    expect(((await response.json()) as { error: string }).error).toBe("Error interno del servidor");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 });

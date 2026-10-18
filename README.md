@@ -158,6 +158,12 @@ npm run dev
 
 Abre `http://localhost:5173`. Las contraseñas se validan desde `.dev.vars`; D1 local conserva los usuarios, roles, configuración, sesiones y auditoría. Este procedimiento no aplica migraciones ni realiza despliegues en producción. Consulta [la guía de persistencia local](specs/009-d1-persistence/quickstart.md) para verificar los flujos.
 
+## Preparación para despliegue en Cloudflare
+
+El trabajo se prioriza así: (1) aislar desarrollo, staging y producción con preflight de release; (2) completar las compuertas CI y el runbook de migraciones/recuperación; (3) cerrar errores internos y habilitar telemetría segura. El backlog ejecutable está en [tasks.md](specs/012-cloudflare-production-readiness/tasks.md), los pasos operativos están en la [guía de despliegue y recuperación](docs/cloudflare-deployment.md), y el estado de cada prerrequisito se registra en la [lista de preparación del release](docs/cloudflare-release-checklist.md).
+
+Los preflight de staging y producción siguen bloqueados hasta configurar IDs D1 reales. El despliegue también requiere crear los Workers y D1 en la cuenta, cargar sus secretos y completar la prueba de staging. La CI verifica y empaqueta el Worker, pero no despliega recursos Cloudflare.
+
 ---
 
 ## 📄 Licencia

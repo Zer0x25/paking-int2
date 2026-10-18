@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import {
   CreateFacilityInputSchema,
   UpdateFacilityInputSchema,
@@ -51,6 +52,7 @@ import {
   updateFacilityRecord,
 } from "../db/repositories/catalog-repository";
 import { mutationFailure, readFailure } from "./http-errors";
+import { BusinessRuleError } from "@core/errors/business-rule-error";
 
 export const facilityRoutes = new Hono<AppEnvironment>();
 
@@ -65,8 +67,9 @@ function actor(c: { get: (key: "user") => AppEnvironment["Variables"]["user"] | 
   return { userId: c.get("user")?.userId ?? "local-system" };
 }
 
-function ruleFailure(error: unknown, fallback: string) {
-  return { error: error instanceof Error ? error.message : fallback };
+function mutationOrRuleFailure(c: Context<AppEnvironment>, error: unknown, fallback: string) {
+  if (error instanceof BusinessRuleError) return { status: 409 as const, error: error.message };
+  return mutationFailure(error, fallback, c);
 }
 
 function guaranteedQuota(units: BusinessUnit[]): number {
@@ -77,7 +80,7 @@ function guaranteedQuota(units: BusinessUnit[]): number {
 function validateUnitCapacity(facilityCapacity: number, units: BusinessUnit[], events: EventBooking[]): void {
   const guaranteed = guaranteedQuota(units);
   if (guaranteed > facilityCapacity) {
-    throw new Error(`La suma de cuotas garantizadas (${guaranteed}) supera el aforo de la instalación (${facilityCapacity})`);
+    throw new BusinessRuleError(`La suma de cuotas garantizadas (${guaranteed}) supera el aforo de la instalación (${facilityCapacity})`);
   }
   const visible = events.filter((event) => isEventVisible(event, new Date()));
   for (const event of visible) validateEventBookingCapacity(event, visible, facilityCapacity, guaranteed);
@@ -94,7 +97,7 @@ facilityRoutes.get("/", async (c) => {
     if (!facilityId) return c.json({ error: "La sesión no tiene un recinto asignado" }, 403);
     return c.json({ facilities: await listFacilities(c.env, facilityId) });
   } catch (error) {
-    const failure = readFailure(error, "No se pudieron cargar las instalaciones");
+    const failure = readFailure(error, "No se pudieron cargar las instalaciones", c);
     return c.json(failure, failure.status);
   }
 });
@@ -110,7 +113,7 @@ facilityRoutes.post("/", async (c) => {
     await createFacilityRecord(c.env, facility, actor(c));
     return c.json({ facility }, 201);
   } catch (error) {
-    const failure = mutationFailure(error, "No se pudo crear la instalación");
+    const failure = mutationFailure(error, "No se pudo crear la instalación", c);
     return c.json(failure, failure.status);
   }
 });
@@ -127,7 +130,8 @@ facilityRoutes.put("/:id", async (c) => {
       try {
         validateFacilityCapacity(parsed.data.totalCapacity, snapshot.areas, snapshot.activeSessions.length);
       } catch (error) {
-        return c.json(ruleFailure(error, "Error de capacidad"), 409);
+        if (error instanceof BusinessRuleError) return c.json({ error: error.message }, 409);
+        throw error;
       }
     }
     const facility = await updateFacilityRecord(c.env, {
@@ -141,7 +145,7 @@ facilityRoutes.put("/:id", async (c) => {
     });
     return c.json({ facility }, 200);
   } catch (error) {
-    const failure = mutationFailure(error, "No se pudo actualizar la instalación");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo actualizar la instalación");
     return c.json(failure, failure.status);
   }
 });
@@ -155,7 +159,7 @@ facilityRoutes.get("/:id/business-units", authMiddleware("admin"), async (c) => 
     const businessUnits = snapshot.businessUnits.sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name));
     return c.json({ businessUnits });
   } catch (error) {
-    const failure = readFailure(error, "No se pudieron cargar las unidades de negocio");
+    const failure = readFailure(error, "No se pudieron cargar las unidades de negocio", c);
     return c.json(failure, failure.status);
   }
 });
@@ -173,8 +177,7 @@ facilityRoutes.post("/:id/business-units", authMiddleware("admin"), async (c) =>
     await createBusinessUnitRecord(c.env, { unit, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ businessUnit: unit }, 201);
   } catch (error) {
-    if (error instanceof Error && !(error.name === "PersistenceConflictError" || error.name === "PersistenceWriteError" || error.name === "MissingD1BindingError")) return c.json(ruleFailure(error, "No se pudo crear la unidad"), 409);
-    const failure = mutationFailure(error, "No se pudo crear la unidad");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo crear la unidad");
     return c.json(failure, failure.status);
   }
 });
@@ -192,17 +195,14 @@ facilityRoutes.put("/:id/business-units/:businessUnitId", authMiddleware("admin"
     if (!current) return c.json({ error: `Unidad "${businessUnitId}" no encontrada` }, 404);
     const updated = updateBusinessUnit({ current, updates: parsed.data, businessUnits: snapshot.businessUnits });
     if (snapshot.events.some((event) => event.businessUnitId === current.id && isEventVisible(event, new Date())) && updated.quotaType !== "contractual") {
-      throw new Error("No se puede cambiar el tipo de cuota mientras la unidad tenga reservas vigentes");
+      throw new BusinessRuleError("No se puede cambiar el tipo de cuota mientras la unidad tenga reservas vigentes");
     }
     const units = snapshot.businessUnits.map((unit) => unit.id === updated.id ? updated : unit);
     validateUnitCapacity(snapshot.facility.totalCapacity, units, snapshot.events);
     await updateBusinessUnitRecord(c.env, { unit: updated, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ businessUnit: updated }, 200);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "No se pudo actualizar la unidad"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo actualizar la unidad");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo actualizar la unidad");
     return c.json(failure, failure.status);
   }
 });
@@ -230,10 +230,7 @@ facilityRoutes.patch("/:id/business-units/:businessUnitId/status", authMiddlewar
     await updateBusinessUnitRecord(c.env, { unit: retired, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ businessUnit: retired }, 200);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "No se pudo retirar la unidad"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo retirar la unidad");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo retirar la unidad");
     return c.json(failure, failure.status);
   }
 });
@@ -259,7 +256,7 @@ facilityRoutes.get("/:id/areas", async (c) => {
     return c.json({ facilityId: snapshot.facility.id, totalCapacity: snapshot.facility.totalCapacity, allocatedCapacitySum,
       floatingBuffer: calculateFacilityBuffer(snapshot.facility.totalCapacity, activeAreas), areas });
   } catch (error) {
-    const failure = readFailure(error, "No se pudieron cargar las áreas");
+    const failure = readFailure(error, "No se pudieron cargar las áreas", c);
     return c.json(failure, failure.status);
   }
 });
@@ -279,10 +276,7 @@ facilityRoutes.post("/:id/areas", async (c) => {
     await createAreaRecord(c.env, { area, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ area }, 201);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "Error al crear el área"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo crear el área");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo crear el área");
     return c.json(failure, failure.status);
   }
 });
@@ -304,10 +298,7 @@ facilityRoutes.patch("/:id/areas/:areaId/capacity", async (c) => {
     await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: targetArea });
     return c.json({ area }, 200);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "Error al ajustar la capacidad"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo ajustar la capacidad");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo ajustar la capacidad");
     return c.json(failure, failure.status);
   }
 });
@@ -329,10 +320,7 @@ facilityRoutes.put("/:id/areas/:areaId", async (c) => {
     await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: current });
     return c.json({ area }, 200);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "No se pudo actualizar el área"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo actualizar el área");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo actualizar el área");
     return c.json(failure, failure.status);
   }
 });
@@ -353,10 +341,7 @@ facilityRoutes.patch("/:id/areas/:areaId/status", async (c) => {
     await updateAreaRecord(c.env, { area, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c), before: current });
     return c.json({ area }, 200);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "No se pudo desactivar el área"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo desactivar el área");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo desactivar el área");
     return c.json(failure, failure.status);
   }
 });
@@ -369,7 +354,7 @@ facilityRoutes.get("/:id/events", authMiddleware("admin"), async (c) => {
     if (!snapshot) return c.json({ error: `Instalación "${facilityId}" no encontrada` }, 404);
     return c.json({ events: snapshot.events.sort((a, b) => a.startTime.localeCompare(b.startTime)) });
   } catch (error) {
-    const failure = readFailure(error, "No se pudieron cargar las reservas");
+    const failure = readFailure(error, "No se pudieron cargar las reservas", c);
     return c.json(failure, failure.status);
   }
 });
@@ -390,10 +375,7 @@ facilityRoutes.post("/:id/events", authMiddleware("admin"), async (c) => {
     await createEventRecord(c.env, { event, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ event }, 201);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "No se pudo crear la reserva"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo crear la reserva");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo crear la reserva");
     return c.json(failure, failure.status);
   }
 });
@@ -417,10 +399,7 @@ facilityRoutes.put("/:id/events/:eventId", authMiddleware("admin"), async (c) =>
     await updateEventRecord(c.env, { event, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ event }, 200);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "No se pudo actualizar la reserva"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo actualizar la reserva");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo actualizar la reserva");
     return c.json(failure, failure.status);
   }
 });
@@ -440,10 +419,7 @@ facilityRoutes.patch("/:id/events/:eventId/status", authMiddleware("admin"), asy
     await updateEventRecord(c.env, { event, current, expectedVersion: parsed.data.version, facilityVersion: snapshot.facilityVersion, actor: actor(c) });
     return c.json({ event }, 200);
   } catch (error) {
-    if (error instanceof Error && error.name !== "PersistenceConflictError" && error.name !== "MissingD1BindingError" && error.name !== "PersistenceWriteError" && !/constraint failed|D1_EXEC_ERROR/i.test(error.message)) {
-      return c.json(ruleFailure(error, "No se pudo cancelar la reserva"), 409);
-    }
-    const failure = mutationFailure(error, "No se pudo cancelar la reserva");
+    const failure = mutationOrRuleFailure(c, error, "No se pudo cancelar la reserva");
     return c.json(failure, failure.status);
   }
 });
@@ -462,7 +438,7 @@ facilityRoutes.get("/:id/catalogs", async (c) => {
       events: snapshot.events,
     });
   } catch (error) {
-    const failure = readFailure(error, "No se pudo cargar el catálogo");
+    const failure = readFailure(error, "No se pudo cargar el catálogo", c);
     return c.json(failure, failure.status);
   }
 });

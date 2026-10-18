@@ -3,6 +3,7 @@ import type {
   CreateBusinessUnitInput,
   UpdateBusinessUnitInput,
 } from "../types/schema";
+import { BusinessRuleError } from "../errors/business-rule-error";
 
 function priorityForQuotaType(quotaType: BusinessUnit["quotaType"]): number {
   if (quotaType === "guaranteed") return 1;
@@ -24,7 +25,7 @@ function assertCodeAvailable(
   const duplicate = businessUnits.some((unit) =>
     unit.facilityId === facilityId && unit.id !== exceptId && normalizeCode(unit.code) === normalizedCode,
   );
-  if (duplicate) throw new Error(`El código "${normalizedCode}" ya está asignado a otra unidad de la instalación`);
+  if (duplicate) throw new BusinessRuleError(`El código "${normalizedCode}" ya está asignado a otra unidad de la instalación`);
 }
 
 export function createBusinessUnit(
@@ -55,9 +56,9 @@ export interface UpdateBusinessUnitParams {
 
 export function updateBusinessUnit({ current, updates, businessUnits }: UpdateBusinessUnitParams): BusinessUnit {
   if (current.version !== updates.version) {
-    throw new Error("La versión de la unidad cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
+    throw new BusinessRuleError("La versión de la unidad cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
   }
-  if (!current.isActive) throw new Error("No se puede editar una unidad inactiva");
+  if (!current.isActive) throw new BusinessRuleError("No se puede editar una unidad inactiva");
   assertCodeAvailable(current.facilityId, updates.code, businessUnits, current.id);
 
   return {
@@ -77,11 +78,11 @@ export function deactivateBusinessUnit(
   dependencies: string[],
 ): BusinessUnit {
   if (current.version !== expectedVersion) {
-    throw new Error("La versión de la unidad cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
+    throw new BusinessRuleError("La versión de la unidad cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
   }
-  if (!current.isActive) throw new Error("La unidad ya está inactiva");
+  if (!current.isActive) throw new BusinessRuleError("La unidad ya está inactiva");
   if (dependencies.length > 0) {
-    throw new Error(`No se puede retirar la unidad mientras tenga ${dependencies.join(", ")}`);
+    throw new BusinessRuleError(`No se puede retirar la unidad mientras tenga ${dependencies.join(", ")}`);
   }
 
   return { ...current, isActive: false, version: current.version + 1 };

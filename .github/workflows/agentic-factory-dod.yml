@@ -2,68 +2,62 @@ name: Agentic Software Factory - DoD Verification
 
 on:
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   push:
-    branches: [ main, master ]
+    branches: [main, master]
+
+permissions:
+  contents: read
 
 jobs:
   verify-dod:
-    name: "Definition of Done (DoD) Quality Gates"
+    name: Definition of Done quality gates
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: 1. Checkout del Repositorio
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 2. Endurecimiento de Seguridad (StepSecurity)
+      - name: Harden runner
         uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
 
-      - name: 3. Configurar Python y UV
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: 22
+          cache: npm
 
-      - name: 4. Instalar UV y herramientas de auditoría
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install locked dependencies
+        run: npm ci
 
-      - name: 5. Detección de Marcadores Prohibidos (TODO / FIXME sin resolver)
+      - name: Reject unresolved TODO and FIXME markers
         run: |
-          echo "🔍 Auditando presencia de TODOs o FIXMEs pendientes..."
-          if git grep -E "(TODO|FIXME):" -- 'specs/' 'src/' 'history/' 2>/dev/null; then
-            echo "❌ ERROR: Se detectaron marcadores TODO/FIXME pendientes que violan el Definition of Done."
-            exit 1
-          else
-            echo "✅ Cero marcadores pendientes encontrados."
-          fi
-
-      - name: 6. Verificación de Integridad de la Constitución
-        run: |
-          if [ ! -f ".specify/memory/constitution.md" ]; then
-            echo "❌ ERROR: Falta el archivo .specify/memory/constitution.md requerido por la gobernanza."
+          if git grep -E '(TODO|FIXME):' -- 'specs/' 'src/' 'history/' 2>/dev/null; then
+            echo 'Unresolved TODO or FIXME markers violate the repository Definition of Done.'
             exit 1
           fi
-          echo "✅ Constitución inmutable presente y verificada."
 
-      - name: 7. Ejecutar Pruebas y Cobertura (si existen suites de prueba)
-        run: |
-          if [ -f "pyproject.toml" ] || [ -f "requirements.txt" ]; then
-            uv venv
-            . .venv/bin/activate
-            [ -f "requirements.txt" ] && uv pip install -r requirements.txt || true
-            if command -v pytest >/dev/null 2>&1; then
-              pytest --cov=. --cov-fail-under=85
-            fi
-          elif [ -f "package.json" ]; then
-            npm ci || npm install
-            npm test --if-present
-          else
-            echo "ℹ️ Repositorio en fase de andamiaje / especificación inicial."
-          fi
+      - name: Verify repository constitution
+        run: test -f .specify/memory/constitution.md
 
-      - name: 8. Certificación Final de Estado READY
-        run: echo "🎉 Todas las compuertas deterministas del Definition of Done han sido superadas con éxito."
+      - name: Test with required coverage
+        run: npm run test:coverage
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Audit dependencies
+        run: npm audit
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package Worker and Static Assets without deploying
+        run: npm run worker:dry-run

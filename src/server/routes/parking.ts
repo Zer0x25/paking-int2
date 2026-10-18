@@ -61,7 +61,7 @@ parkingRoutes.get("/active", async (c) => {
     const sessions = await listActiveSessions(c.env, facilityId);
     return c.json({ sessions, count: sessions.length });
   } catch (error) {
-    const failure = readFailure(error, "No se pudieron cargar las sesiones activas");
+    const failure = readFailure(error, "No se pudieron cargar las sesiones activas", c);
     return c.json(failure, failure.status);
   }
 });
@@ -115,7 +115,7 @@ parkingRoutes.post("/entry", async (c) => {
       },
     }, 201);
   } catch (error) {
-    const failure = mutationFailure(error, "No se pudo registrar la entrada");
+    const failure = mutationFailure(error, "No se pudo registrar la entrada", c);
     return c.json(failure, failure.status);
   }
 });
@@ -143,7 +143,7 @@ parkingRoutes.post("/exit", async (c) => {
     });
     return c.json({ session: updated, durationMinutes: updated.durationMinutes });
   } catch (error) {
-    const failure = mutationFailure(error, "No se pudo registrar la salida");
+    const failure = mutationFailure(error, "No se pudo registrar la salida", c);
     return c.json(failure, failure.status);
   }
 });
@@ -170,7 +170,7 @@ parkingRoutes.post("/:sessionId/exit", async (c) => {
     });
     return c.json({ session: updated, durationMinutes: updated.durationMinutes });
   } catch (error) {
-    const failure = mutationFailure(error, "No se pudo registrar la salida");
+    const failure = mutationFailure(error, "No se pudo registrar la salida", c);
     return c.json(failure, failure.status);
   }
 });
@@ -200,7 +200,7 @@ parkingRoutes.patch("/:sessionId/plate", async (c) => {
     return c.json({ session: updated });
   } catch (error) {
     if (error instanceof Error && /ya está activa/i.test(error.message)) return c.json({ error: error.message }, 409);
-    const failure = mutationFailure(error, "No se pudo corregir la patente");
+    const failure = mutationFailure(error, "No se pudo corregir la patente", c);
     return c.json(failure, failure.status);
   }
 });

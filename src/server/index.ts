@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
 import { authRoutes } from "./routes/auth";
 import { parkingRoutes } from "./routes/parking";
 import { dashboardRoutes } from "./routes/dashboard";
@@ -10,11 +9,13 @@ import { realtimeRoutes } from "./routes/realtime";
 import type { AppEnvironment } from "./types/app-environment";
 import { apiSecurityMiddleware } from "./middleware/auth";
 import { publishFacilityChange } from "./middleware/change-notification";
+import { logServerError, requestLoggingMiddleware } from "./middleware/request-logging";
+import { GENERIC_SERVER_ERROR } from "./routes/http-errors";
 
 const app = new Hono<AppEnvironment>();
 
 // Global Middlewares
-app.use("*", logger());
+app.use("*", requestLoggingMiddleware);
 app.use(
   "*",
   cors({
@@ -28,14 +29,8 @@ app.use("/api/*", publishFacilityChange());
 
 // Global Error Handler
 app.onError((err, c) => {
-  console.error("Server Error:", err);
-  return c.json(
-    {
-      error: err.message || "Error interno del servidor",
-      status: 500,
-    },
-    500
-  );
+  logServerError(c, err);
+  return c.json({ error: GENERIC_SERVER_ERROR, status: 500 }, 500);
 });
 
 // Health check

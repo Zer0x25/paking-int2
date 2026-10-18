@@ -20,7 +20,7 @@ dashboardRoutes.get("/:id/dashboard", async (c) => {
     });
     return c.json(metrics);
   } catch (error) {
-    const failure = readFailure(error, "No se pudieron cargar las métricas del recinto");
+    const failure = readFailure(error, "No se pudieron cargar las métricas del recinto", c);
     return c.json(failure, failure.status);
   }
 });

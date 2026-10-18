@@ -4,10 +4,11 @@ import { signJwt } from "../middleware/auth";
 import type { AppEnvironment } from "../types/app-environment";
 import {
   authenticateLocalCredential,
-  LocalCredentialConfigurationError,
   readLocalCredentialConfiguration,
 } from "../services/local-credential-auth";
 import { ensureLocalIdentity } from "../db/repositories/user-repository";
+import { logServerError } from "../middleware/request-logging";
+import { GENERIC_SERVER_ERROR } from "./http-errors";
 
 export const authRoutes = new Hono<AppEnvironment>();
 
@@ -34,8 +35,7 @@ authRoutes.post("/login", async (c) => {
     }, configuration.jwtSecret, 86400);
     return c.json({ token, user });
   } catch (error) {
-    if (error instanceof LocalCredentialConfigurationError) return c.json({ error: error.message }, 500);
-    const message = error instanceof Error ? error.message : "Error interno al autenticar";
-    return c.json({ error: message }, 500);
+    logServerError(c, error);
+    return c.json({ error: GENERIC_SERVER_ERROR, status: 500 }, 500);
   }
 });

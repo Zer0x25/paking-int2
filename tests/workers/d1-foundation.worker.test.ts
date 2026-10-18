@@ -139,9 +139,9 @@ describe("D1 persistence foundation", () => {
     expect(mutationFailure(new PersistenceConflictError("stale"), "fallback")).toMatchObject({ status: 409, error: "stale" });
     expect(mutationFailure(new MissingD1BindingError(), "fallback").status).toBe(500);
     expect(mutationFailure(new Error("UNIQUE constraint failed"), "fallback").status).toBe(409);
-    expect(mutationFailure(new Error("unexpected"), "fallback")).toMatchObject({ status: 500, error: "fallback" });
-    expect(mutationFailure("unknown", "fallback")).toMatchObject({ status: 500, error: "fallback" });
-    expect(readFailure("unknown", "fallback")).toMatchObject({ status: 500, error: "fallback" });
+    expect(mutationFailure(new Error("unexpected"), "fallback")).toMatchObject({ status: 500, error: "Error interno del servidor" });
+    expect(mutationFailure("unknown", "fallback")).toMatchObject({ status: 500, error: "Error interno del servidor" });
+    expect(readFailure("unknown", "fallback")).toMatchObject({ status: 500, error: "Error interno del servidor" });
   });
 
   it("treats a D1 batch with no facility row as an absent snapshot", async () => {

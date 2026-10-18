@@ -16,7 +16,11 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.workers.json",
     "lint": "eslint .",
     "worker:dev": "npm run build && node scripts/dev-worker.mjs",
-    "worker:deploy": "npm run build && wrangler deploy src/server/index.ts"
+    "worker:preflight:staging": "node scripts/deploy/validate-environment.mjs staging",
+    "worker:preflight:production": "node scripts/deploy/validate-environment.mjs production",
+    "worker:deploy:staging": "node scripts/deploy/release.mjs staging",
+    "worker:deploy:production": "node scripts/deploy/release.mjs production",
+    "worker:dry-run": "npm run build && wrangler deploy --dry-run --env=\"\""
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",

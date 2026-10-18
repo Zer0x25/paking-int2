@@ -17,22 +17,37 @@ describe("Workers Static Assets configuration contract", () => {
     expect(wranglerConfig).toMatch(
       /^not_found_handling\s*=\s*"single-page-application"$/m,
     );
-    expect(wranglerConfig).toContain('"assets_navigation_prefers_asset_serving"');
+    expect(wranglerConfig).not.toContain("assets_navigation_prefers_asset_serving");
     expect(wranglerConfig).not.toMatch(/^\[site\]$/m);
   });
 
   it("keeps the existing runtime date and D1 binding", () => {
-    expect(wranglerConfig).toMatch(/^compatibility_date\s*=\s*"2024-10-15"$/m);
+    expect(wranglerConfig).toMatch(/^compatibility_date\s*=\s*"2026-10-18"$/m);
     expect(wranglerConfig).toContain('"nodejs_compat"');
     expect(wranglerConfig).toMatch(/^binding\s*=\s*"PARKING_DB"$/m);
   });
 
+  it("declares isolated staging and production bindings and observability", () => {
+    for (const environment of ["staging", "production"]) {
+      expect(wranglerConfig).toMatch(new RegExp(`^\\[env\\.${environment}\\]$`, "m"));
+      expect(wranglerConfig).toContain(`ENVIRONMENT = "${environment}"`);
+      expect(wranglerConfig).toContain(`database_name = "paking-db-${environment}"`);
+      expect(wranglerConfig).toContain(`__${environment.toUpperCase()}_D1_DATABASE_ID__`);
+      expect(wranglerConfig).toContain(`[[env.${environment}.durable_objects.bindings]]`);
+      expect(wranglerConfig).toContain(`[[env.${environment}.migrations]]`);
+      expect(wranglerConfig).toContain(`[env.${environment}.secrets]`);
+      expect(wranglerConfig).toContain(`[env.${environment}.observability]`);
+    }
+    expect(wranglerConfig).toMatch(/^upload_source_maps\s*=\s*true$/m);
+  });
+
   it("builds the current frontend before starting or deploying Wrangler", () => {
     expect(packageConfig.scripts["worker:dev"]).toMatch(/^npm run build && /);
-    expect(packageConfig.scripts["worker:deploy"]).toMatch(/^npm run build && /);
-    expect(packageConfig.scripts["worker:deploy"]).toContain(
-      "wrangler deploy src/server/index.ts",
-    );
+    expect(packageConfig.scripts).not.toHaveProperty("worker:deploy");
+    expect(packageConfig.scripts["worker:deploy:staging"]).toContain("staging");
+    expect(packageConfig.scripts["worker:deploy:production"]).toContain("production");
+    expect(packageConfig.scripts["worker:dry-run"]).toContain("--dry-run");
+    expect(packageConfig.scripts["worker:dry-run"]).toContain('--env=""');
   });
 
   it("proxies WebSocket upgrades and never caches private API responses in Workbox", () => {

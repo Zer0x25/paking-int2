@@ -16,6 +16,7 @@ export interface AppD1Database {
 export interface AppEnvironment {
   Bindings: Partial<Omit<Env, "PARKING_DB">> & { PARKING_DB?: AppD1Database };
   Variables: {
+    requestId: string;
     user: {
       userId: string;
       username: string;

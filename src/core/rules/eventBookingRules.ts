@@ -1,4 +1,5 @@
 import type { EventBooking, UpdateEventBookingInput } from "@core/types/schema";
+import { BusinessRuleError } from "../errors/business-rule-error";
 
 const excludedStatuses = new Set(["cancelled", "completed"]);
 
@@ -44,7 +45,7 @@ export function validateEventBookingCapacity(
       .reduce((sum, event) => sum + event.reservedSlots, 0);
 
     if (committed > facilityCapacity) {
-      throw new Error(
+      throw new BusinessRuleError(
         `Los compromisos simultáneos (${committed} cupos) superan la capacidad disponible del recinto (${facilityCapacity})`,
       );
     }
@@ -67,10 +68,10 @@ export function updateEventBooking({
   guaranteedQuota,
 }: UpdateEventBookingParams): EventBooking {
   if (updates.version !== current.version) {
-    throw new Error("La versión de la reserva cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
+    throw new BusinessRuleError("La versión de la reserva cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
   }
   if (current.status === "cancelled" || current.status === "completed") {
-    throw new Error("La reserva ya no se puede editar porque está cerrada");
+    throw new BusinessRuleError("La reserva ya no se puede editar porque está cerrada");
   }
 
   const updated: EventBooking = {
@@ -89,10 +90,10 @@ export function updateEventBooking({
 
 export function cancelEventBooking(current: EventBooking, expectedVersion: number): EventBooking {
   if (current.version !== expectedVersion) {
-    throw new Error("La versión de la reserva cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
+    throw new BusinessRuleError("La versión de la reserva cambió desde la última carga; actualiza la lista e inténtalo nuevamente");
   }
   if (current.status === "cancelled" || current.status === "completed") {
-    throw new Error("La reserva ya está cerrada");
+    throw new BusinessRuleError("La reserva ya está cerrada");
   }
 
   return { ...current, status: "cancelled", version: current.version + 1 };

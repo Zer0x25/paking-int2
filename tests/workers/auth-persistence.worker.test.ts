@@ -107,7 +107,7 @@ describe("Local authentication persistence through the Worker API", () => {
     try {
       const duplicateNames = await login(credentials.adminUsername, credentials.adminPassword);
       expect(duplicateNames.response.status).toBe(500);
-      expect(String(duplicateNames.body.error)).toContain("deben ser distintos");
+      expect(String(duplicateNames.body.error)).toBe("Error interno del servidor");
     } finally {
       Reflect.set(bindings, "ADMIN_USERNAME", originalAdminUsername);
     }
@@ -140,7 +140,7 @@ describe("Local authentication persistence through the Worker API", () => {
     })).status).toBe(401);
   });
 
-  it("fails closed and names each missing local variable without echoing credential values", async () => {
+  it("fails closed without exposing missing local configuration or credential values", async () => {
     const cases: Array<{ key: string; username: string; password: string }> = [
       { key: "ADMIN_USERNAME", username: credentials.adminUsername, password: credentials.adminPassword },
       { key: "ADMIN_PASSWORD", username: credentials.adminUsername, password: credentials.adminPassword },
@@ -162,7 +162,9 @@ describe("Local authentication persistence through the Worker API", () => {
         const { response, body } = await login(username, password);
         expect(response.status).toBeGreaterThanOrEqual(400);
         expect(response.status).not.toBe(200);
-        expect(String(body.error ?? "")).toContain(key);
+        expect(response.status).toBe(500);
+        expect(String(body.error ?? "")).toBe("Error interno del servidor");
+        expect(JSON.stringify(body)).not.toContain(key);
         expect(JSON.stringify(body)).not.toContain(credentials.adminPassword);
         expect(JSON.stringify(body)).not.toContain(credentials.operatorPassword);
         expect(JSON.stringify(body)).not.toContain(credentials.jwtSecret);

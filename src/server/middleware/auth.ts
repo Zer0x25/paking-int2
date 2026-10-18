@@ -1,6 +1,8 @@
 import type { Context, Next } from "hono";
 import type { UserRole } from "@core/types/schema";
 import type { AppEnvironment } from "../types/app-environment";
+import { logServerError } from "./request-logging";
+import { GENERIC_SERVER_ERROR } from "../routes/http-errors";
 
 export interface TokenPayload {
   userId: string;
@@ -178,7 +180,10 @@ export function authMiddleware(requiredRole?: UserRole) {
 
     const token = authHeader.substring(7);
     const secret = c.env?.JWT_SECRET;
-    if (!secret) return c.json({ error: "Falta configurar JWT_SECRET en .dev.vars" }, 500);
+    if (!secret) {
+      logServerError(c, new Error("JWT signing secret is not configured"));
+      return c.json({ error: GENERIC_SERVER_ERROR, status: 500 }, 500);
+    }
     const payload = await verifyJwt(token, secret);
 
     if (!payload) {

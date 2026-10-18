@@ -140,7 +140,7 @@ syncRoutes.post("/delta", async (c) => {
         conflicts.push({ mutationId: mutation.id, reason: error instanceof Error ? error.message : "Conflicto de sincronización" });
         continue;
       }
-      const failure = mutationFailure(error, "No se pudo guardar la sincronización");
+      const failure = mutationFailure(error, "No se pudo guardar la sincronización", c);
       return c.json({ ...failure, mutationId: mutation.id }, failure.status);
     }
   }

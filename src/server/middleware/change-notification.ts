@@ -1,6 +1,7 @@
 import type { Context, Next } from "hono";
 import type { FacilityChangeScope } from "../../shared/facility-events";
 import type { AppEnvironment } from "../types/app-environment";
+import { logServerError } from "./request-logging";
 
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
 
@@ -61,8 +62,7 @@ export function publishFacilityChange() {
       const result = await stub.fetch(publishRequest);
       if (!result.ok) throw new Error(`publish rejected with status ${result.status}`);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown failure";
-      console.error(JSON.stringify({ event: "facility_change_broadcast_failed", facilityId, reason }));
+      logServerError(c, error, 503);
     }
     return response;
   };
