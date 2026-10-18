@@ -20,11 +20,19 @@
 
 - [ ] Record the release commit SHA and confirm CI passes tests and 85% coverage, types, lint, dependency audit, build, and Wrangler dry-run.
 - [x] Apply `0001_initial_persistence.sql` only to the staging database.
-- [ ] Review and apply `0002_facility_lifecycle.sql` and `0003_default_space_category.sql` to staging before releasing the facility lifecycle and gate bootstrap code.
+- [x] Apply `0002_facility_lifecycle.sql`, `0003_default_space_category.sql`, and `0004_space_category_capacity.sql` to the staging D1 database before releasing the facility lifecycle and typed capacity code.
 - [x] Deploy staging from `.dev.vars.staging`; `/api/health` returned HTTP 200 with `Cache-Control: no-store`.
 - [ ] Verify admin/operator login, facility scoping, gate entry/exit, configuration permissions, offline sync, and event invalidation.
 - [ ] Verify private API responses use `Cache-Control: no-store`; review structured Logs, Traces, and source-mapped errors for sensitive data.
 - [ ] Rehearse Worker rollback and D1 restore on staging. Confirm D1 `version: production`, retain a recovery point within the Workers Free 7-day window, and record the recovery outcome.
+
+### Staging release evidence — 2026-10-18
+
+- Code commit: `8658af11610eeec81171ae44dc04534d5455bbef` on `013-accessible-space-allocation`, pushed to `origin`.
+- D1 target: `paking-db-staging` (`33b5b562-ebef-4bd6-aff9-c0026d4dc03c`); migrations `0002`, `0003`, and `0004` applied. Wrangler reports no migrations pending.
+- Worker: `paking-int2-worker-staging`, version `cfc76add-fe33-4cd0-a0ff-c72cafea023e`, at `https://paking-int2-worker-staging.jmella-hs.workers.dev`.
+- Checks: staging preflight, build, Wrangler dry-run, `/api/health` HTTP 200 (`no-store`), static app HTTP 200, and presence of `standard_capacity` and `accessible_capacity` in `parking_areas`.
+- The push gate passed 225 unit tests and 41 Worker tests. Authenticated admin/operator workflows and the remaining staging smoke checks are still outstanding.
 
 ## Production release
 
