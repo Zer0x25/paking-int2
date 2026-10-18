@@ -1,6 +1,6 @@
 # Cloudflare Release Readiness Checklist
 
-**Current status: STAGING DEPLOYED; PRODUCTION NOT READY.** Staging is live on `workers.dev`; application smoke checks and the production account setup remain outstanding.
+**Current status: STAGING DEPLOYED; CORE STAGING QA PASSED; PRODUCTION NOT READY.** Staging is live on `workers.dev`. Physical-device/second-facility isolation, source-mapped trace review, and D1 restore rehearsal remain open, along with production account setup.
 
 ## Account and target setup
 
@@ -18,13 +18,18 @@
 
 ## Release candidate and staging
 
-- [ ] Record the release commit SHA and confirm CI passes tests and 85% coverage, types, lint, dependency audit, build, and Wrangler dry-run.
+- [x] Record release commit `5330aea3f114efd06ac5252439dd4d49b198edd8`; local push gate, coverage, types, lint, dependency audit, build, and Wrangler dry-run passed.
+- [ ] Confirm the hosted CI result for the release commit.
 - [x] Apply `0001_initial_persistence.sql` only to the staging database.
 - [x] Apply `0002_facility_lifecycle.sql`, `0003_default_space_category.sql`, and `0004_space_category_capacity.sql` to the staging D1 database before releasing the facility lifecycle and typed capacity code.
 - [x] Deploy staging from `.dev.vars.staging`; `/api/health` returned HTTP 200 with `Cache-Control: no-store`.
-- [ ] Verify admin/operator login, facility scoping, gate entry/exit, configuration permissions, offline sync, and event invalidation.
-- [ ] Verify private API responses use `Cache-Control: no-store`; review structured Logs, Traces, and source-mapped errors for sensitive data.
-- [ ] Rehearse Worker rollback and D1 restore on staging. Confirm D1 `version: production`, retain a recovery point within the Workers Free 7-day window, and record the recovery outcome.
+- [x] Verify admin/operator login, request scope rejection for a different facility ID, gate entry/exit, configuration permissions, offline sync/outbox, and event invalidation between browser clients.
+- [ ] Verify isolation using two separately provisioned facilities and identities; a mismatched facility ID alone does not prove tenant-to-tenant isolation.
+- [x] Verify private API responses use `Cache-Control: no-store`; inspect structured request/error logs and confirm generic 500 responses.
+- [ ] Inspect an actual sampled trace and source-mapped exception stack; configuration and trace fields alone do not prove source-map remapping.
+- [x] Rehearse Worker rollback on staging and restore the current version.
+- [x] Confirm D1 Time Travel returned a bookmark for a point during the last 7 days.
+- [ ] Rehearse D1 restore on an isolated staging copy; restoring the current database was not performed because it would replace current data.
 
 ### Staging release evidence — 2026-10-18
 
@@ -42,7 +47,18 @@
 - Local release gates passed: preflight, frontend and Worker coverage (93.92% / 91.09% statements), typecheck, lint, `npm audit` (0 vulnerabilities), production build, and Wrangler staging dry-run.
 - Smoke checks passed: root and `/dashboard` loaded the SPA in a real browser; generated JS asset returned HTTP 200; `/api/health` returned HTTP 200 with `no-store`; anonymous session reads returned HTTP 401 with `no-store`; admin/operator login and role restrictions worked; admin catalog and operator active-session reads worked; synthetic gate entry appeared in the active list, exit completed it, and the vehicle was absent from the active list afterward.
 - Two synthetic gate test sessions were entered and exited in staging with device ID `codex-staging-smoke`; they remain in session history/audit and are no longer active. Test plates: `ZD-PY-GF` and `HS-EW-75`.
-- Still outstanding: facility-scope isolation, offline IndexedDB sync/outbox, cross-device event invalidation, full configuration mutation review, structured Logs/Traces and source-map review, and rollback/D1 restore rehearsal. These checks are not covered by this release evidence.
+- Superseded by the staging QA follow-up below.
+
+### Staging QA follow-up — 2026-10-18
+
+- Source commit under test: `5330aea3f114efd06ac5252439dd4d49b198edd8`. The Worker was active at version `34c12096-dd51-4e8b-8b35-5899820ded66` before the rollback drill and was restored to that version afterward.
+- Scope and authorization checks: admin and operator logins succeeded; operator configuration access and writes returned 403; requests for a different facility ID returned 403; unauthenticated catalog access returned 401. Private responses included `Cache-Control: no-store`.
+- Configuration mutation checks: the facility name was changed temporarily and restored; a synthetic contractual unit, area, and event were created and edited; an active dependency correctly blocked unit deactivation with 409; the event was cancelled and the area and unit were deactivated. The final read confirmed the facility name was restored, the synthetic records were inactive/cancelled, and the pre-test six active sessions remained.
+- Offline and event checks: a real browser tab went offline, saved one synthetic vehicle entry locally, and showed one pending outbox change. Reconnection synchronized it; another browser tab received the active-list invalidation (six to seven vehicles). The test vehicle was then exited through the UI and the count returned to six. This used two browser tabs in one Chrome profile, not two physical devices.
+- Logs: Cloudflare Observability showed `http.request` records and one controlled `server.error` record for an intentionally malformed JSON request. The response was a generic 500 with no stack/details. Trace identifier fields were present; an actual sampled trace with a remapped stack was not verified.
+- Worker recovery: rollback to `cfc76add-fe33-4cd0-a0ff-c72cafea023e` succeeded. Health, admin login, catalog, and active-session reads returned 200 with six active sessions. The Worker was immediately restored to `34c12096-dd51-4e8b-8b35-5899820ded66` at 100% traffic. No D1 data was restored or overwritten.
+- D1 recovery readiness: `wrangler d1 time-travel info` returned a bookmark for `2026-10-18T22:00:00Z`. A restore rehearsal still requires an isolated copy or separate authorization to replace staging data.
+- Remaining staging checks: full tenant isolation with two distinct facilities/identities, actual two-device event invalidation, an observed sampled trace with a source-mapped stack, and D1 restore on an isolated database.
 
 ## Production release
 
