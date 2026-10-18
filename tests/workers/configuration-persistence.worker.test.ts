@@ -259,14 +259,15 @@ describe("Configuration persistence through the Worker API", () => {
     })).status).toBe(400);
     expect((await workerFetch(`/api/facilities/${unknownFacility}`, {
       method: "PUT", headers: jsonHeaders(token), body: JSON.stringify({ name: "Missing venue" }),
-    })).status).toBe(404);
+    })).status).toBe(403);
     expect((await workerFetch(`/api/facilities/${facility.id}`, {
       method: "PUT", headers: jsonHeaders(token), body: JSON.stringify({ totalCapacity: 0 }),
     })).status).toBe(400);
-    expect((await workerFetch(`/api/facilities/${unknownFacility}/areas`)).status).toBe(404);
-    expect((await workerFetch(`/api/facilities/${unknownFacility}/business-units`, { headers: jsonHeaders(token) })).status).toBe(404);
-    expect((await workerFetch(`/api/facilities/${unknownFacility}/events`, { headers: jsonHeaders(token) })).status).toBe(404);
-    expect((await workerFetch(`/api/facilities/${unknownFacility}/catalogs`)).status).toBe(404);
+    const unknownFacilityToken = await adminToken(unknownFacility);
+    expect((await workerFetch(`/api/facilities/${unknownFacility}/areas`, { headers: jsonHeaders(unknownFacilityToken) })).status).toBe(404);
+    expect((await workerFetch(`/api/facilities/${unknownFacility}/business-units`, { headers: jsonHeaders(unknownFacilityToken) })).status).toBe(404);
+    expect((await workerFetch(`/api/facilities/${unknownFacility}/events`, { headers: jsonHeaders(unknownFacilityToken) })).status).toBe(404);
+    expect((await workerFetch(`/api/facilities/${unknownFacility}/catalogs`, { headers: jsonHeaders(unknownFacilityToken) })).status).toBe(404);
 
     expect((await workerFetch(units, {
       method: "POST", headers: jsonHeaders(token), body: JSON.stringify({}),
@@ -419,12 +420,12 @@ describe("Configuration persistence through the Worker API", () => {
     Reflect.set(bindings, "PARKING_DB", undefined);
     try {
       const reads = [
-        workerFetch("/api/facilities"),
-        workerFetch(`/api/facilities/${facility.id}/areas`),
+        workerFetch("/api/facilities", { headers: jsonHeaders(token) }),
+        workerFetch(`/api/facilities/${facility.id}/areas`, { headers: jsonHeaders(token) }),
         workerFetch(`/api/facilities/${facility.id}/business-units`, { headers: jsonHeaders(token) }),
         workerFetch(`/api/facilities/${facility.id}/events`, { headers: jsonHeaders(token) }),
-        workerFetch(`/api/facilities/${facility.id}/catalogs`),
-        workerFetch(`/api/facilities/${facility.id}/dashboard`),
+        workerFetch(`/api/facilities/${facility.id}/catalogs`, { headers: jsonHeaders(token) }),
+        workerFetch(`/api/facilities/${facility.id}/dashboard`, { headers: jsonHeaders(token) }),
       ];
       expect((await Promise.all(reads)).map(({ status }) => status)).toEqual([500, 500, 500, 500, 500, 500]);
     } finally {

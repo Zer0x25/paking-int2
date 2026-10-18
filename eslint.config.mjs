@@ -14,6 +14,7 @@ export default defineConfig([
       "**/specs/**",
       "**/history/**",
       "**/feedback/**",
+      "worker-configuration.d.ts",
     ],
   },
   {

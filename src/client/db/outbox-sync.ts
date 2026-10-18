@@ -3,6 +3,7 @@ import {
   markOutboxMutationSynced,
 } from "./indexed-db";
 import type { SyncMutation } from "@core/types/schema";
+import { apiFetch } from "../api/client";
 
 export interface SyncResult {
   processed: number;
@@ -45,12 +46,10 @@ export async function processDeltaSync(
     result = await apiPoster("/api/sync/delta", payload);
   } else {
     // Default fetch to server API
-    const token = typeof localStorage !== "undefined" ? localStorage.getItem("auth_token") || "" : "";
-    const response = await fetch("/api/sync/delta", {
+    const response = await apiFetch("/api/sync/delta", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(payload),
     });

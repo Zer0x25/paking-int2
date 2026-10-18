@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { BusinessUnit, QuotaType } from "@core/types/schema";
+import { apiFetch } from "../api/client";
 
 interface BusinessUnitManagerProps {
   facilityId: string;
@@ -129,7 +130,7 @@ export const BusinessUnitManager: React.FC<BusinessUnitManagerProps> = ({ facili
   const loadUnits = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/facilities/${facilityId}/business-units`, {
+      const response = await apiFetch(`/api/facilities/${facilityId}/business-units`, {
         headers: authorizationHeaders(),
       });
       const data = await response.json();
@@ -155,7 +156,7 @@ export const BusinessUnitManager: React.FC<BusinessUnitManagerProps> = ({ facili
     setSavingUnitId("new");
     setFeedback(null);
     try {
-      const response = await fetch(`/api/facilities/${facilityId}/business-units`, {
+      const response = await apiFetch(`/api/facilities/${facilityId}/business-units`, {
         method: "POST",
         headers: authorizationHeaders(),
         body: JSON.stringify(fields),
@@ -175,7 +176,7 @@ export const BusinessUnitManager: React.FC<BusinessUnitManagerProps> = ({ facili
     setSavingUnitId(unit.id);
     setFeedback(null);
     try {
-      const response = await fetch(`/api/facilities/${facilityId}/business-units/${unit.id}`, {
+      const response = await apiFetch(`/api/facilities/${facilityId}/business-units/${unit.id}`, {
         method: "PUT",
         headers: authorizationHeaders(),
         body: JSON.stringify({ ...fields, version: unit.version }),
@@ -198,7 +199,7 @@ export const BusinessUnitManager: React.FC<BusinessUnitManagerProps> = ({ facili
     setSavingUnitId(unit.id);
     setFeedback(null);
     try {
-      const response = await fetch(`/api/facilities/${facilityId}/business-units/${unit.id}/status`, {
+      const response = await apiFetch(`/api/facilities/${facilityId}/business-units/${unit.id}/status`, {
         method: "PATCH",
         headers: authorizationHeaders(),
         body: JSON.stringify({ isActive: false, version: unit.version }),

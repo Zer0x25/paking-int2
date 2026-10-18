@@ -45,6 +45,7 @@ export default defineConfig({
       "@core": path.resolve(__dirname, "./src/core"),
       "@server": path.resolve(__dirname, "./src/server"),
       "@client": path.resolve(__dirname, "./src/client"),
+      "cloudflare:workers": path.resolve(__dirname, "./tests/stubs/cloudflare-workers.ts"),
     },
   },
 });

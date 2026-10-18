@@ -5,6 +5,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { User } from "@core/types/schema";
 import { App } from "@client/App";
 import { LoginView } from "@client/components/LoginView";
+import { cacheCatalogData, getCachedCatalogData } from "@client/db/indexed-db";
+
+vi.mock("@client/db/indexed-db", () => ({
+  cacheCatalogData: vi.fn(async () => undefined),
+  getCachedCatalogData: vi.fn(async () => null),
+  getLocalAreas: vi.fn(async () => []),
+  saveLocalArea: vi.fn(async () => undefined),
+}));
 
 vi.mock("@client/components/ThemeSelector", () => ({
   ThemeSelector: () => <button type="button" aria-label="Cambiar tema">Tema</button>,
@@ -47,17 +55,35 @@ const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringif
 });
 
 function installAppFetch() {
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url === "/api/auth/login") return jsonResponse({ token: "signed-token", user: adminUser });
+    if (url === "/api/auth/login") return jsonResponse({ token: signedToken(), user: adminUser });
     if (url.endsWith("/catalogs")) return jsonResponse({
       facility: { id: "facility-admin", name: "Persisted facility", address: "", totalCapacity: 80,
         createdAt: "2026-10-17T12:00:00.000Z", updatedAt: "2026-10-17T12:00:00.000Z" },
       businessUnits: [], categories: [], areas: [], events: [],
     });
-    if (url.endsWith("/dashboard")) return jsonResponse({ facilityId: "facility-admin", totalCapacity: 80 });
+    if (url.endsWith("/dashboard")) return jsonResponse({
+      facilityId: "facility-admin",
+      totalCapacity: 80,
+      totalOccupied: 1,
+      totalAvailable: 79,
+      occupancyPercentage: 1.25,
+      alertLevel: "normal",
+      units: [],
+      areas: [],
+      floatingBuffer: 0,
+      timestamp: "2026-10-17T12:00:00.000Z",
+    });
     return jsonResponse({});
-  }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+function signedToken(exp = Math.floor(Date.now() / 1000) + 3600): string {
+  const payload = btoa(JSON.stringify({ exp })).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `header.${payload}.signature`;
 }
 
 function fillLoginForm() {
@@ -66,6 +92,7 @@ function fillLoginForm() {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   localStorage.clear();
   installAppFetch();
 });
@@ -104,8 +131,8 @@ describe("local login view", () => {
     fillLoginForm();
     fireEvent.click(screen.getByRole("button", { name: "Ingresar" }));
 
-    await waitFor(() => expect(onLoginSuccess).toHaveBeenCalledWith(adminUser, "signed-token"));
-    expect(localStorage.getItem("auth_token")).toBe("signed-token");
+    await waitFor(() => expect(onLoginSuccess).toHaveBeenCalledWith(adminUser, expect.any(String)));
+    expect(localStorage.getItem("auth_token")).toBeTruthy();
     expect(JSON.parse(localStorage.getItem("auth_user") ?? "null")).toEqual(adminUser);
 
     cleanup();
@@ -118,18 +145,31 @@ describe("local login view", () => {
 });
 
 describe("app authentication and role navigation", () => {
-  it("logs in, switches views, loads D1 data, and clears local identity on logout", async () => {
+  it("does not read private data before login", async () => {
+    const fetchMock = installAppFetch();
+    render(<App />);
+    expect(await screen.findByLabelText("Usuario")).toBeTruthy();
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((path) => path.startsWith("/api/"))).toEqual([]);
+  });
+
+  it("loads only each active view, does not poll, and clears identity on logout", async () => {
+    const fetchMock = installAppFetch();
     render(<App />);
     fillLoginForm();
     fireEvent.click(screen.getByRole("button", { name: "Ingresar" }));
 
     expect((await screen.findByTestId("gate-panel")).textContent).toContain("facility-admin");
     expect(screen.getByRole("button", { name: /Configuración/ })).toBeTruthy();
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/catalogs"))).toBe(true));
+    await waitFor(() => expect(cacheCatalogData).toHaveBeenCalledWith("catalogs:facility-admin", expect.any(Object)));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/dashboard"))).toBe(false);
+
     fireEvent.click(screen.getByRole("button", { name: /Dashboard/ }));
     await waitFor(() => expect(screen.getByTestId("operational-dashboard").textContent).toContain("80"));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/dashboard"))).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /Configuración/ }));
     await waitFor(() => expect(screen.getByTestId("facility-config").textContent).toContain("Persisted facility"));
-
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/catalogs"))).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Salir" }));
     expect(await screen.findByLabelText("Usuario")).toBeTruthy();
     expect(localStorage.getItem("auth_user")).toBeNull();
@@ -138,6 +178,7 @@ describe("app authentication and role navigation", () => {
 
   it("hides configuration from an operator while keeping gate and dashboard available", async () => {
     localStorage.setItem("auth_user", JSON.stringify(operatorUser));
+    localStorage.setItem("auth_token", signedToken());
     render(<App />);
 
     expect((await screen.findByTestId("gate-panel")).textContent).toContain("facility-admin");
@@ -148,11 +189,49 @@ describe("app authentication and role navigation", () => {
 
   it("keeps the signed-in shell usable when catalog and dashboard requests fail", async () => {
     localStorage.setItem("auth_user", JSON.stringify(adminUser));
+    localStorage.setItem("auth_token", signedToken());
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
     render(<App />);
 
     expect((await screen.findByTestId("gate-panel")).textContent).toContain("facility-admin");
     fireEvent.click(screen.getByRole("button", { name: /Dashboard/ }));
     await waitFor(() => expect(screen.getByTestId("operational-dashboard").textContent).toContain("empty"));
+  });
+
+  it("returns to login and clears private state after an authenticated request returns 401", async () => {
+    localStorage.setItem("auth_user", JSON.stringify(adminUser));
+    localStorage.setItem("auth_token", signedToken());
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "Token inválido o expirado" }, 401)));
+    render(<App />);
+
+    expect(await screen.findByLabelText("Usuario")).toBeTruthy();
+    expect(localStorage.getItem("auth_user")).toBeNull();
+    expect(localStorage.getItem("auth_token")).toBeNull();
+  });
+
+  it("loads offline catalog snapshots only from the authenticated facility key", async () => {
+    localStorage.setItem("auth_user", JSON.stringify(adminUser));
+    localStorage.setItem("auth_token", signedToken());
+    vi.mocked(getCachedCatalogData).mockResolvedValue({
+      facility: { id: "facility-admin", name: "Offline facility", address: "", totalCapacity: 80,
+        createdAt: "2026-10-17T12:00:00.000Z", updatedAt: "2026-10-17T12:00:00.000Z" },
+      businessUnits: [], categories: [], areas: [], events: [],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+    render(<App />);
+
+    expect(await screen.findByText("Offline facility")).toBeTruthy();
+    expect(getCachedCatalogData).toHaveBeenCalledWith("catalogs:facility-admin");
+  });
+
+  it("does not load private snapshots with an expired session", async () => {
+    localStorage.setItem("auth_user", JSON.stringify(adminUser));
+    localStorage.setItem("auth_token", signedToken(Math.floor(Date.now() / 1000) - 1));
+    const fetchMock = installAppFetch();
+    render(<App />);
+
+    expect(await screen.findByLabelText("Usuario")).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).startsWith("/api/"))).toHaveLength(0);
+    expect(getCachedCatalogData).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import type { Facility, BusinessUnit, EventBooking, ParkingArea } from "@core/ty
 import { calculateFacilityBuffer } from "@core/rules/areaAllocationRules";
 import { BusinessUnitManager } from "./BusinessUnitManager";
 import { EventBookingsManager } from "./EventBookingsManager";
+import { apiFetch } from "../api/client";
 
 interface FacilityConfigViewProps {
   facility: Facility | null;
@@ -214,7 +215,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     if (!facility?.id) return;
     setLoadingAreas(true);
     try {
-      const res = await fetch(`/api/facilities/${facility.id}/areas`);
+      const res = await apiFetch(`/api/facilities/${facility.id}/areas`);
       if (res.ok) {
         const data = await res.json();
         setAreas(data.areas || []);
@@ -244,7 +245,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     setFeedback(null);
 
     try {
-      const res = await fetch(`/api/facilities/${facility.id}`, {
+      const res = await apiFetch(`/api/facilities/${facility.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -286,7 +287,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     };
 
     try {
-      const res = await fetch(`/api/facilities/${facility.id}/areas`, {
+      const res = await apiFetch(`/api/facilities/${facility.id}/areas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -323,7 +324,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     setFeedback(null);
 
     try {
-      const res = await fetch(`/api/facilities/${facility.id}/areas/${areaId}/capacity`, {
+      const res = await apiFetch(`/api/facilities/${facility.id}/areas/${areaId}/capacity`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -351,7 +352,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     setSavingArea(true);
     setFeedback(null);
     try {
-      const response = await fetch(`/api/facilities/${facility.id}/areas/${area.id}`, {
+      const response = await apiFetch(`/api/facilities/${facility.id}/areas/${area.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -388,7 +389,7 @@ export const FacilityConfigView: React.FC<FacilityConfigViewProps> = ({
     setDeactivatingAreaId(area.id);
     setFeedback(null);
     try {
-      const response = await fetch(`/api/facilities/${facility.id}/areas/${area.id}/status`, {
+      const response = await apiFetch(`/api/facilities/${facility.id}/areas/${area.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: false, version: area.version }),

@@ -3,6 +3,7 @@ import type { BusinessUnit, SpaceCategory, ParkingArea } from "@core/types/schem
 import { normalizeLicensePlate, createParkingSession } from "@core/models/parking-session";
 import { createUuid } from "@core/utils/uuid";
 import { saveLocalSession, enqueueOutboxMutation } from "../db/indexed-db";
+import { apiFetch } from "../api/client";
 
 interface VehicleEntryFormProps {
   facilityId: string;
@@ -67,7 +68,7 @@ export const VehicleEntryForm: React.FC<VehicleEntryFormProps> = ({
     if (navigator.onLine) {
       try {
         const token = localStorage.getItem("auth_token") || "";
-        const res = await fetch("/api/parking-sessions/entry", {
+        const res = await apiFetch("/api/parking-sessions/entry", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

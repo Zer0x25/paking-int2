@@ -1,3 +1,4 @@
+import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   applyD1Migrations,
@@ -13,6 +14,7 @@ import { mutationFailure, readFailure } from "../../src/server/routes/http-error
 import { PersistenceConflictError } from "../../src/server/db/repositories/write-transaction";
 import { loadFacilitySnapshot } from "../../src/server/db/repositories/catalog-repository";
 import type { AppD1Database, AppEnvironment } from "../../src/server/types/app-environment";
+import { signJwt } from "../../src/server/middleware/auth";
 
 const requiredTables = [
   "facilities",
@@ -26,10 +28,21 @@ const requiredTables = [
   "sync_mutations",
 ];
 
+let adminAuthorization = "";
+
 describe("D1 persistence foundation", () => {
   beforeAll(async () => {
     await applyD1Migrations();
     await applyLocalCatalogSeed();
+    const signingSecret = crypto.randomUUID() + crypto.randomUUID();
+    Reflect.set(env as unknown as Record<string, unknown>, "JWT_SECRET", signingSecret);
+    const token = await signJwt({
+      userId: "d1-foundation-admin",
+      username: "d1-foundation-admin",
+      role: "admin",
+      facilityId: "fac-default-01",
+    }, signingSecret);
+    adminAuthorization = `Bearer ${token}`;
   });
 
   it("applies the feature migrations and creates the required tables and indexes", async () => {
@@ -93,7 +106,7 @@ describe("D1 persistence foundation", () => {
     try {
       const response = await workerFetch("/api/facilities", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: adminAuthorization },
         body: JSON.stringify({ name: "Audit rollback fixture", totalCapacity: 30, address: "" }),
       });
       expect(response.status).toBeGreaterThanOrEqual(500);
@@ -112,11 +125,11 @@ describe("D1 persistence foundation", () => {
     try {
       const response = await workerFetch("/api/facilities", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: adminAuthorization },
         body: JSON.stringify({ name: "No binding fixture", totalCapacity: 4 }),
       });
       expect(response.status).toBeGreaterThanOrEqual(500);
-      expect((await workerFetch("/api/facilities")).status).toBe(500);
+      expect((await workerFetch("/api/facilities", { headers: { Authorization: adminAuthorization } })).status).toBe(500);
     } finally {
       Reflect.set(bindings, "PARKING_DB", original);
     }

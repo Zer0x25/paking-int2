@@ -82,7 +82,13 @@ export async function verifyJwt(token: string, secret: string): Promise<TokenPay
     const payloadJson = new TextDecoder().decode(base64UrlDecode(payloadB64));
     const payload = JSON.parse(payloadJson) as TokenPayload;
 
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    if (
+      !payload.userId ||
+      !payload.username ||
+      (payload.role !== "admin" && payload.role !== "operator") ||
+      !Number.isFinite(payload.exp) ||
+      payload.exp <= Math.floor(Date.now() / 1000)
+    ) {
       return null; // Expired
     }
 
@@ -90,6 +96,77 @@ export async function verifyJwt(token: string, secret: string): Promise<TokenPay
   } catch {
     return null;
   }
+}
+
+async function requestedFacilityId(c: Context<AppEnvironment>): Promise<string | null | undefined> {
+  const path = c.req.path;
+  if (path.startsWith("/api/facilities/")) {
+    const value = path.slice("/api/facilities/".length).split("/")[0];
+    try {
+      return value ? decodeURIComponent(value) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const needsBodyScope = path.startsWith("/api/parking-sessions/") || path.startsWith("/api/sync/");
+  if (!needsBodyScope) return undefined;
+
+  const queryScope = c.req.query("facilityId");
+  if (queryScope) return queryScope;
+  if (c.req.method === "GET" || c.req.method === "HEAD") return null;
+
+  try {
+    const body = await c.req.raw.clone().json() as { facilityId?: unknown };
+    return typeof body.facilityId === "string" && body.facilityId.length > 0 ? body.facilityId : null;
+  } catch {
+    return null;
+  }
+}
+
+export function apiSecurityMiddleware() {
+  return async (c: Context<AppEnvironment>, next: Next) => {
+    c.header("Cache-Control", "no-store");
+    const path = c.req.path;
+    const isHealth = path === "/api/health" && c.req.method === "GET";
+    const isLogin = path === "/api/auth/login" && c.req.method === "POST";
+    const isEventHandshake = path.startsWith("/api/events/");
+    if (c.req.method === "OPTIONS" || isHealth || isLogin || isEventHandshake) {
+      await next();
+      return;
+    }
+
+    let rejection: Response | undefined;
+    const authResult = await authMiddleware()(c, async () => {
+      const user = c.get("user");
+      if (!user.facilityId) {
+        rejection = c.json({ error: "La sesión no tiene un recinto asignado" }, 403);
+        return;
+      }
+
+      if (path === "/api/facilities" && c.req.method === "POST" && user.role !== "admin") {
+        rejection = c.json({ error: "Permisos insuficientes para esta operación" }, 403);
+        return;
+      }
+
+      if (path.startsWith("/api/facilities/") && !["GET", "HEAD", "OPTIONS"].includes(c.req.method) && user.role !== "admin") {
+        rejection = c.json({ error: "Permisos insuficientes para esta operación" }, 403);
+        return;
+      }
+
+      const requested = await requestedFacilityId(c);
+      if (requested === null) {
+        rejection = c.json({ error: "El recinto solicitado es requerido" }, 400);
+        return;
+      }
+      if (requested !== undefined && requested !== user.facilityId) {
+        rejection = c.json({ error: "No tiene acceso a este recinto" }, 403);
+        return;
+      }
+      await next();
+    });
+    return rejection ?? authResult;
+  };
 }
 
 export function authMiddleware(requiredRole?: UserRole) {
@@ -113,6 +190,6 @@ export function authMiddleware(requiredRole?: UserRole) {
     }
 
     c.set("user", payload);
-    await next();
+    return await next();
   };
 }

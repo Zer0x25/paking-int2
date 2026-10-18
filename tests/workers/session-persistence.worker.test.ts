@@ -171,7 +171,7 @@ describe("Parking session persistence through the Worker API", () => {
     expect((await workerFetch("/api/parking-sessions/entry", {
       method: "POST", headers: requestHeaders(token),
       body: JSON.stringify({ facilityId: `missing-${facilityId}`, businessUnitId: `unit-${facilityId}`, spaceCategoryId: `cat-${facilityId}`, licensePlate: "AA1A11" }),
-    })).status).toBe(404);
+    })).status).toBe(403);
     expect((await workerFetch("/api/parking-sessions/entry", {
       method: "POST", headers: requestHeaders(token),
       body: JSON.stringify({ facilityId, businessUnitId: `unit-${facilityId}`, spaceCategoryId: "missing-category", licensePlate: "BB2B22" }),
@@ -217,7 +217,7 @@ describe("Parking session persistence through the Worker API", () => {
     expect((await workerFetch(`/api/parking-sessions/${firstId}/plate`, {
       method: "PATCH", headers: requestHeaders(token), body: JSON.stringify({ facilityId, licensePlate: "KL7M89", expectedVersion: 1 }),
     })).status).toBe(409);
-    expect((await workerFetch(`/api/facilities/missing-${facilityId}/dashboard`, { headers: requestHeaders(token) })).status).toBe(404);
+    expect((await workerFetch(`/api/facilities/missing-${facilityId}/dashboard`, { headers: requestHeaders(token) })).status).toBe(403);
 
     const bindings = (await import("cloudflare:test")).env as unknown as Record<string, unknown>;
     const original = bindings.PARKING_DB;

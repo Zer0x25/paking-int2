@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { getPendingOutboxMutations } from "../db/indexed-db";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { getPendingOutboxMutations, OUTBOX_CHANGED_EVENT } from "../db/indexed-db";
 import { processDeltaSync } from "../db/outbox-sync";
 
 interface SyncStatusBarProps {
@@ -14,16 +14,16 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const syncLock = useRef(false);
 
-  const checkPending = async () => {
+  const checkPending = useCallback(async () => {
     try {
       const pending = await getPendingOutboxMutations();
       setPendingCount(pending.length);
     } catch {
       // Ignored if indexedDB is not available
     }
-  };
+  }, []);
 
-  const runSync = async () => {
+  const runSync = useCallback(async () => {
     if (!navigator.onLine || syncLock.current) return;
     syncLock.current = true;
     setIsSyncing(true);
@@ -40,7 +40,7 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
       setIsSyncing(false);
       await checkPending();
     }
-  };
+  }, [facilityId, onSyncCompleted, checkPending]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -48,24 +48,24 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ facilityId, onSync
       runSync();
     };
     const handleOffline = () => setIsOnline(false);
+    const handleOutboxChanged = () => {
+      void checkPending();
+      if (navigator.onLine) void runSync();
+    };
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    window.addEventListener(OUTBOX_CHANGED_EVENT, handleOutboxChanged);
 
-    checkPending();
-    const interval = setInterval(() => {
-      checkPending();
-      if (navigator.onLine && pendingCount > 0) {
-        runSync();
-      }
-    }, 5000);
+    void checkPending();
+    void runSync();
 
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
-      clearInterval(interval);
+      window.removeEventListener(OUTBOX_CHANGED_EVENT, handleOutboxChanged);
     };
-  }, [facilityId, pendingCount]);
+  }, [facilityId, checkPending, runSync]);
 
   const canSync = isOnline && pendingCount > 0 && !isSyncing;
   const pendingDescription = pendingCount === 1 ? "1 cambio pendiente" : `${pendingCount} cambios pendientes`;

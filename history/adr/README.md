@@ -22,3 +22,4 @@ Este directorio almacena el historial inmutable de decisiones técnicas del proy
 | [ADR-014](ADR-014-d1-persistence-and-auth-bootstrap.md) | Persistencia D1 local y bootstrap seguro de cuentas | Aceptado | 2026-10-17 |
 | [ADR-015](ADR-015-local-worker-restart.md) | Reinicio seguro del Worker local y puerto estable | Aceptado | 2026-10-17 |
 | [ADR-016](ADR-016-workers-static-assets.md) | Migrar de Workers Sites a Workers Static Assets | Aceptado | 2026-10-17 |
+| [ADR-017](ADR-017-authenticated-event-driven-refresh.md) | Rutas protegidas y refresco por eventos autenticados | Aceptado | 2026-10-17 |

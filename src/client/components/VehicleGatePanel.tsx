@@ -19,6 +19,7 @@ import {
 } from "../db/indexed-db";
 import { findStaleActiveSessionIds, getLocalEntryValidationError, mergeActiveParkingSessions } from "../utils/gate-operations";
 import { createUuid } from "@core/utils/uuid";
+import { apiFetch } from "../api/client";
 
 type GateStep = "plate" | "movement" | "entry-details";
 
@@ -79,10 +80,7 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     }
 
     try {
-      const token = localStorage.getItem("auth_token") || "";
-      const response = await fetch(`/api/parking-sessions/active?facilityId=${encodeURIComponent(facilityId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiFetch(`/api/parking-sessions/active?facilityId=${encodeURIComponent(facilityId)}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo cargar la lista de vehículos activos");
 
@@ -108,15 +106,18 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
 
   useEffect(() => {
     void refreshSessions();
-    const interval = window.setInterval(() => void refreshSessions(), 6000);
     const handleOnline = () => void refreshSessions();
     const handleOffline = () => void refreshSessions();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void refreshSessions();
+    };
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
-      window.clearInterval(interval);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [refreshSessions, refreshKey]);
 
@@ -173,10 +174,9 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
 
     if (navigator.onLine) {
       try {
-        const token = localStorage.getItem("auth_token") || "";
-        const response = await fetch("/api/parking-sessions/entry", {
+        const response = await apiFetch("/api/parking-sessions/entry", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         const data = await response.json();
@@ -274,10 +274,9 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
 
     if (navigator.onLine) {
       try {
-        const token = localStorage.getItem("auth_token") || "";
-        const response = await fetch("/api/parking-sessions/exit", {
+        const response = await apiFetch("/api/parking-sessions/exit", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ facilityId, licensePlate: cleanPlate, exitTime: now, deviceId }),
         });
         const data = await response.json();
@@ -336,10 +335,9 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
     const now = new Date().toISOString();
     if (navigator.onLine) {
       try {
-        const token = localStorage.getItem("auth_token") || "";
-        const response = await fetch(`/api/parking-sessions/${encodeURIComponent(session.id)}/exit`, {
+        const response = await apiFetch(`/api/parking-sessions/${encodeURIComponent(session.id)}/exit`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ facilityId, expectedVersion: session.version, exitTime: now }),
         });
         const data = await response.json();
@@ -383,10 +381,9 @@ export const VehicleGatePanel: React.FC<VehicleGatePanelProps> = ({
 
     if (navigator.onLine) {
       try {
-        const token = localStorage.getItem("auth_token") || "";
-        const response = await fetch(`/api/parking-sessions/${encodeURIComponent(session.id)}/plate`, {
+        const response = await apiFetch(`/api/parking-sessions/${encodeURIComponent(session.id)}/plate`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ facilityId, licensePlate: cleanPlate, expectedVersion: session.version }),
         });
         const data = await response.json();

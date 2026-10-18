@@ -162,6 +162,7 @@ beforeEach(() => {
   activeSessions = [];
   writeFailure = null;
   nextSessionId = 1;
+  localStorage.setItem("auth_token", "test-auth-token");
   vi.stubGlobal(
     "fetch",
     async (input: RequestInfo | URL, init?: RequestInit) => {

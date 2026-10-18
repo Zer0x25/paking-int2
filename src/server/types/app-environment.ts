@@ -14,15 +14,7 @@ export interface AppD1Database {
 }
 
 export interface AppEnvironment {
-  Bindings: {
-    PARKING_DB?: AppD1Database;
-    JWT_SECRET?: string;
-    ENVIRONMENT?: string;
-    ADMIN_USERNAME?: string;
-    ADMIN_PASSWORD?: string;
-    OPERATOR_USERNAME?: string;
-    OPERATOR_PASSWORD?: string;
-  };
+  Bindings: Partial<Omit<Env, "PARKING_DB">> & { PARKING_DB?: AppD1Database };
   Variables: {
     user: {
       userId: string;

@@ -195,7 +195,7 @@ describe("Offline delta sync persistence through the Worker API", () => {
 
     const missingFacilityId = `missing-${facilityId}`;
     const missingFacilityMutation = entryMutation(missingFacilityId, `offline-${crypto.randomUUID()}`, "VW4X56");
-    expect((await sync(token, missingFacilityId, [missingFacilityMutation]).then((response) => response.json()) as { conflicts: unknown[] }).conflicts).toHaveLength(1);
+    expect((await sync(token, missingFacilityId, [missingFacilityMutation])).status).toBe(403);
 
     const missingCategory = entryMutation(facilityId, `offline-${crypto.randomUUID()}`, "YZ7A89");
     missingCategory.payload.spaceCategoryId = "missing-category";

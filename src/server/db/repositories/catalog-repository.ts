@@ -9,6 +9,7 @@ import type {
   SpaceCategory,
 } from "@core/types/schema";
 import { createDrizzleDatabase, requireD1 } from "../client";
+import { eq } from "drizzle-orm";
 import { facilities } from "../schema";
 import type { AppEnvironment } from "../../types/app-environment";
 import { createAuditStatement } from "./audit-repository";
@@ -50,8 +51,8 @@ function resultRows<T>(result: unknown): T[] {
   return rows ?? [];
 }
 
-export async function listFacilities(bindings: Bindings): Promise<Facility[]> {
-  const rows = await createDrizzleDatabase(bindings).select().from(facilities);
+export async function listFacilities(bindings: Bindings, facilityId: string): Promise<Facility[]> {
+  const rows = await createDrizzleDatabase(bindings).select().from(facilities).where(eq(facilities.id, facilityId));
   return rows.map((row) => facilityFromRow({
     id: row.id,
     name: row.name,

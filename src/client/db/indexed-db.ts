@@ -40,6 +40,11 @@ export interface ParkingDB extends DBSchema {
 
 const DB_NAME = "smart_parking_offline_db";
 const DB_VERSION = 2;
+export const OUTBOX_CHANGED_EVENT = "smart-parking:outbox-changed";
+
+function notifyOutboxChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(OUTBOX_CHANGED_EVENT));
+}
 
 let dbPromise: Promise<IDBPDatabase<ParkingDB>> | null = null;
 
@@ -142,6 +147,7 @@ export async function enqueueOutboxMutation(mutation: SyncMutation): Promise<voi
   const validatedMutation = SyncMutationSchema.parse(mutation);
   const db = await getDB();
   await db.put("outbox_queue", validatedMutation);
+  notifyOutboxChanged();
 }
 
 export async function getPendingOutboxMutations(): Promise<SyncMutation[]> {
@@ -157,6 +163,7 @@ export async function markOutboxMutationSynced(id: string): Promise<void> {
   if (mutation) {
     mutation.status = "synced";
     await db.put("outbox_queue", mutation);
+    notifyOutboxChanged();
   }
 }
 

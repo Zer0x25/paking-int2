@@ -53,6 +53,13 @@ import { mutationFailure, readFailure } from "./http-errors";
 
 export const facilityRoutes = new Hono<AppEnvironment>();
 
+facilityRoutes.use("*", async (c, next) => {
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+    return authMiddleware("admin")(c, next);
+  }
+  await next();
+});
+
 function actor(c: { get: (key: "user") => AppEnvironment["Variables"]["user"] | undefined }): { userId: string } {
   return { userId: c.get("user")?.userId ?? "local-system" };
 }
@@ -82,7 +89,9 @@ function isContractualUnit(units: BusinessUnit[], businessUnitId: string): boole
 // GET /api/facilities
 facilityRoutes.get("/", async (c) => {
   try {
-    return c.json({ facilities: await listFacilities(c.env) });
+    const facilityId = c.get("user")?.facilityId;
+    if (!facilityId) return c.json({ error: "La sesión no tiene un recinto asignado" }, 403);
+    return c.json({ facilities: await listFacilities(c.env, facilityId) });
   } catch (error) {
     const failure = readFailure(error, "No se pudieron cargar las instalaciones");
     return c.json(failure, failure.status);

@@ -8,6 +8,6 @@
       "@cloudflare/workers-types"
     ]
   },
-  "include": ["tests/workers/**/*.ts", "src/server/**/*.ts", "src/core/**/*.ts"],
+  "include": ["worker-configuration.d.ts", "tests/workers/**/*.ts", "tests/unit/server/**/*.ts", "src/server/**/*.ts", "src/core/**/*.ts"],
   "exclude": ["node_modules", "dist", ".wrangler"]
 }

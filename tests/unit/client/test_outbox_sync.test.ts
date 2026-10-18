@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import "fake-indexeddb/auto";
 import {
   enqueueOutboxMutation,
@@ -18,6 +18,22 @@ import { SyncMutationSchema } from "@core/types/schema";
 describe("User Story 1: Outbox Sync Manager & IndexedDB (TDD)", () => {
   const facilityId = "11111111-1111-1111-1111-111111111111";
   const deviceId = "gate-terminal-01";
+
+  beforeEach(() => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+      clear: () => values.clear(),
+    });
+    localStorage.setItem("auth_token", "test-auth-token");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it("should save and retrieve local parking sessions from indexed-db", async () => {
     const session: ParkingSession = {
@@ -248,7 +264,7 @@ describe("User Story 1: Outbox Sync Manager & IndexedDB (TDD)", () => {
     }
   });
 
-  it("uses an empty token when local storage has no saved credential", async () => {
+  it("refuses to sync when local storage has no saved credential", async () => {
     const mutation: SyncMutation = {
       id: "mut-fetch-empty-auth",
       type: "VEHICLE_ENTRY",
@@ -262,20 +278,23 @@ describe("User Story 1: Outbox Sync Manager & IndexedDB (TDD)", () => {
 
     const originalFetch = global.fetch;
     const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-    let requestHeaders: HeadersInit | undefined;
+    const expired = vi.fn();
+    const browserWindow = new EventTarget();
+    vi.stubGlobal("window", browserWindow);
+    browserWindow.addEventListener("smart-parking:session-expired", expired);
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       value: { getItem: () => null },
     });
-    global.fetch = (async (_input, init) => {
-      requestHeaders = init?.headers;
-      return { ok: true, json: async () => ({ processed: 1, succeeded: [mutation.id], conflicts: [] }) } as Response;
-    }) as typeof fetch;
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as typeof fetch;
 
     try {
-      await processDeltaSync(facilityId, deviceId);
-      expect(new Headers(requestHeaders).get("Authorization")).toBe("Bearer");
+      await expect(processDeltaSync(facilityId, deviceId)).rejects.toThrow("No hay una sesión autenticada");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(expired).toHaveBeenCalledOnce();
     } finally {
+      browserWindow.removeEventListener("smart-parking:session-expired", expired);
       global.fetch = originalFetch;
       if (localStorageDescriptor) Object.defineProperty(globalThis, "localStorage", localStorageDescriptor);
       else Reflect.deleteProperty(globalThis, "localStorage");

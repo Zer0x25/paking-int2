@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { BusinessUnit, EventBooking } from "@core/types/schema";
 import { isEventVisible } from "@core/rules/eventBookingRules";
 import { formatEventRange, fromDateTimeLocal, toDateTimeLocal } from "../utils/event-booking";
+import { apiFetch } from "../api/client";
 
 interface EventBookingsManagerProps {
   facilityId: string;
@@ -32,7 +33,7 @@ async function authorizedFetch(url: string, init: RequestInit): Promise<Response
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
   headers.set("Content-Type", "application/json");
-  return fetch(url, { ...init, headers });
+  return apiFetch(url, { ...init, headers });
 }
 
 export const EventBookingsManager: React.FC<EventBookingsManagerProps> = ({

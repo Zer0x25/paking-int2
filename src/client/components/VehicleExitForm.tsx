@@ -6,6 +6,7 @@ import {
   saveLocalSession,
   enqueueOutboxMutation,
 } from "../db/indexed-db";
+import { apiFetch } from "../api/client";
 
 interface VehicleExitFormProps {
   facilityId: string;
@@ -44,7 +45,7 @@ export const VehicleExitForm: React.FC<VehicleExitFormProps> = ({
     if (navigator.onLine) {
       try {
         const token = localStorage.getItem("auth_token") || "";
-        const res = await fetch("/api/parking-sessions/exit", {
+        const res = await apiFetch("/api/parking-sessions/exit", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
