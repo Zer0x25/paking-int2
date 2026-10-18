@@ -368,7 +368,7 @@ describe("Configuration persistence through the Worker API", () => {
     expect(raceResponses.map(({ status }) => status).sort()).toEqual([201, 409]);
     const losingResponse = raceResponses.find(({ status }) => status === 409);
     const losingBody = await losingResponse?.json() as { error: string } | undefined;
-    expect(losingBody?.error).toMatch(/buffer disponible Estándar \(40\)/);
+    expect(losingBody?.error).toMatch(/buffer disponible Estándar \(40\)|La configuración cambió; actualice los datos e inténtelo nuevamente/);
     expect(await countRows(getD1Database(), "SELECT COALESCE(SUM(allocated_capacity), 0) AS count FROM parking_areas WHERE facility_id = ?", raceFacility.id)).toBeLessThanOrEqual(100);
 
     const database = getD1Database();

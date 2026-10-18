@@ -25,7 +25,16 @@ describe("default-deny API route security", () => {
   beforeAll(async () => {
     await applyD1Migrations();
     secret = crypto.randomUUID() + crypto.randomUUID();
-    Reflect.set(bindings, "JWT_SECRET", secret);
+    const testCredentials = {
+      ADMIN_USERNAME: `security-admin-${crypto.randomUUID()}`,
+      ADMIN_PASSWORD: crypto.randomUUID(),
+      OPERATOR_USERNAME: `security-operator-${crypto.randomUUID()}`,
+      OPERATOR_PASSWORD: crypto.randomUUID(),
+      JWT_SECRET: secret,
+    };
+    for (const [key, value] of Object.entries(testCredentials)) {
+      if (!Reflect.set(bindings, key, value)) throw new Error("Worker test environment cannot inject ephemeral login variables");
+    }
     await addFacility(facilityOne);
     await addFacility(facilityTwo);
     adminOne = await signJwt({ userId: "security-admin", username: "security-admin", role: "admin", facilityId: facilityOne }, secret);
